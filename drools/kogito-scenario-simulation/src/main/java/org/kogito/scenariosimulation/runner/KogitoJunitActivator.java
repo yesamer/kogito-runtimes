@@ -22,13 +22,15 @@ import org.junit.runners.model.InitializationError;
 
 public class KogitoJunitActivator extends ScenarioJunitActivator {
 
+    private static final String PROJECT_ROOT = ".";
+
     public KogitoJunitActivator(Class<?> testClass) throws InitializationError {
         super(testClass);
     }
 
     @Override
     protected void runChild(ScenarioRunnerDTO child, RunNotifier notifier) {
-        KogitoDMNScenarioRunner scenarioRunner = new KogitoDMNScenarioRunner(child);
+        KogitoDMNScenarioRunner scenarioRunner = new KogitoDMNScenarioRunner(child, PROJECT_ROOT);
         scenarioRunner.run(notifier);
     }
 }

@@ -53,7 +53,13 @@ import static org.drools.scenariosimulation.backend.fluent.DMNScenarioExecutable
 
 public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
 
-    private DMNRuntime dmnRuntime = initDmnRuntime();
+    private final DMNRuntime dmnRuntime;
+    private final Path projectRoot;
+
+    public KogitoDMNScenarioRunnerHelper(String projectRootPath) {
+        projectRoot = Paths.get(projectRootPath);
+        dmnRuntime = initDmnRuntime();
+    }
 
     @Override
     protected Map<String, Object> executeScenario(KieContainer kieContainer,
@@ -95,7 +101,7 @@ public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
     }
 
     private Function<String, KieRuntimeFactory> initPmmlKieRuntimeFactory() {
-        try (Stream<Path> fileStream = Files.walk(Paths.get("."))) {
+        try (Stream<Path> fileStream = Files.walk(projectRoot)) {
             Map<KieBase, KieRuntimeFactory> kieRuntimeFactories =
                     PMMLKogito.createKieRuntimeFactoriesWithInMemoryCompilation(
                             fileStream
@@ -117,7 +123,7 @@ public class KogitoDMNScenarioRunnerHelper extends DMNScenarioRunnerHelper {
     private DMNRuntime initDmnRuntime() {
         Function<String, KieRuntimeFactory> kieRuntimeFactoryFunction = initPmmlKieRuntimeFactory();
 
-        try (Stream<Path> fileStream = Files.walk(Paths.get("."))) {
+        try (Stream<Path> fileStream = Files.walk(projectRoot)) {
             List<Resource> resources = fileStream.filter(path -> filterResource(path, ".dmn"))
                     .map(Path::toFile)
                     .map(FileSystemResource::new)

@@ -27,13 +27,16 @@ public class KogitoDMNScenarioRunner extends DMNScenarioRunner {
 
     private static final KieContainer mockKieContainer = mockKieContainer();
 
-    public KogitoDMNScenarioRunner(ScenarioRunnerDTO scenarioRunnerDTO) {
+    private final String projectRootPath;
+
+    public KogitoDMNScenarioRunner(ScenarioRunnerDTO scenarioRunnerDTO, String projectRootPath) {
         super(mockKieContainer, scenarioRunnerDTO);
+        this.projectRootPath = projectRootPath;
     }
 
     @Override
     protected AbstractRunnerHelper newRunnerHelper() {
-        return new KogitoDMNScenarioRunnerHelper();
+        return new KogitoDMNScenarioRunnerHelper(projectRootPath);
     }
 
     /**
