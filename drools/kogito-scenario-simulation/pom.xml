@@ -16,6 +16,8 @@
     
     <properties>
       <java.module.name>org.kie.kogito.kogito.scenario.simulation</java.module.name>
+        <version.surefire.plugin>2.22.2</version.surefire.plugin>
+        <version.surefire.report.plugin>2.22.2</version.surefire.report.plugin>
     </properties>
 
     <dependencies>
@@ -116,5 +118,24 @@
 
             </exclusions>
         </dependency>
+
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-engine</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>${version.org.junit.platform}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+        </dependency>
     </dependencies>
+
 </project>
