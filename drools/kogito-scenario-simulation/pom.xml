@@ -16,8 +16,6 @@
     
     <properties>
       <java.module.name>org.kie.kogito.kogito.scenario.simulation</java.module.name>
-        <version.surefire.plugin>2.22.2</version.surefire.plugin>
-        <version.surefire.report.plugin>2.22.2</version.surefire.report.plugin>
     </properties>
 
     <dependencies>

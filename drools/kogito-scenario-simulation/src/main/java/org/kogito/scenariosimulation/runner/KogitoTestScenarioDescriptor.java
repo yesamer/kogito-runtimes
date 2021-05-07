@@ -15,6 +15,7 @@
  */
 package org.kogito.scenariosimulation.runner;
 
+import org.drools.scenariosimulation.api.model.ScenarioWithIndex;
 import org.drools.scenariosimulation.backend.runner.model.ScenarioRunnerDTO;
 import org.junit.platform.engine.UniqueId;
 import org.junit.platform.engine.support.descriptor.AbstractTestDescriptor;
@@ -23,12 +24,18 @@ import org.junit.platform.engine.support.descriptor.ClassSource;
 public class KogitoTestScenarioDescriptor extends AbstractTestDescriptor {
 
     private final ScenarioRunnerDTO scenarioRunnerDTO;
+    private final int index;
+    private final String fileName;
+    private final ScenarioWithIndex scenarioWithIndex;
 
-    public KogitoTestScenarioDescriptor(UniqueId uniqueId, ScenarioRunnerDTO scenarioRunnerDTO) {
-        super(uniqueId.append("testscenario", scenarioRunnerDTO.getFileName()),
-                scenarioRunnerDTO.getFileName(),
+    public KogitoTestScenarioDescriptor(UniqueId uniqueId, String fileName, int index, ScenarioRunnerDTO scenarioRunnerDTO, ScenarioWithIndex scenarioWithIndex) {
+        super(uniqueId.append("testscenario", fileName.concat(String.valueOf(index))),
+                String.valueOf(index).concat(fileName),
                 ClassSource.from(KogitoTestScenarioEngine.class));
         this.scenarioRunnerDTO = scenarioRunnerDTO;
+        this.index = index;
+        this.fileName = fileName;
+        this.scenarioWithIndex = scenarioWithIndex;
     }
 
     @Override
@@ -38,5 +45,17 @@ public class KogitoTestScenarioDescriptor extends AbstractTestDescriptor {
 
     public ScenarioRunnerDTO getScenarioRunnerDTO() {
         return scenarioRunnerDTO;
+    }
+
+    public int getIndex() {
+        return index;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
+    public ScenarioWithIndex getScenarioWithIndex() {
+        return scenarioWithIndex;
     }
 }

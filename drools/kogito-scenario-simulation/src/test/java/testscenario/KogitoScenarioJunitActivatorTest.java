@@ -16,6 +16,7 @@
 package testscenario;
 
 import org.junit.Test;
+import org.junit.platform.commons.annotation.Testable;
 import org.kogito.scenariosimulation.runner.KogitoJunitActivator;
 
 /**
@@ -24,6 +25,7 @@ import org.kogito.scenariosimulation.runner.KogitoJunitActivator;
  * Each row of the scenario will generate a test JUnit result.
  */
 //@org.junit.runner.RunWith(KogitoJunitActivator.class)
+@Testable
 public class KogitoScenarioJunitActivatorTest {
 
 }
