@@ -15,9 +15,7 @@
  */
 package testscenario;
 
-import org.junit.Test;
 import org.junit.platform.commons.annotation.Testable;
-import org.kogito.scenariosimulation.runner.KogitoJunitActivator;
 
 /**
  * KogitoJunitActivator is a custom JUnit runner that enables the execution of Test Scenario files (*.scesim).

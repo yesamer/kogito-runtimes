@@ -18,18 +18,17 @@ package org.kogito.scenariosimulation.runner;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 import java.util.Scanner;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.drools.scenariosimulation.api.model.*;
 import org.drools.scenariosimulation.api.utils.ConstantsHolder;
 import org.drools.scenariosimulation.backend.expression.ExpressionEvaluatorFactory;
-import org.drools.scenariosimulation.backend.runner.AbstractScenarioRunner;
 import org.drools.scenariosimulation.backend.runner.ScenarioException;
 import org.drools.scenariosimulation.backend.runner.model.ScenarioRunnerDTO;
 import org.drools.scenariosimulation.backend.runner.model.ScenarioRunnerData;
@@ -42,11 +41,10 @@ import org.junit.platform.engine.TestEngine;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.UniqueId;
 import org.junit.platform.engine.support.descriptor.EngineDescriptor;
-import org.junit.runner.Description;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.drools.scenariosimulation.api.utils.ScenarioSimulationSharedUtils.FILE_EXTENSION;
+import static java.util.stream.Collectors.toList;
 
 public class KogitoTestScenarioEngine implements TestEngine {
 
@@ -58,60 +56,33 @@ public class KogitoTestScenarioEngine implements TestEngine {
         return "kogito-test-scenario";
     }
 
-    public static Stream<String> getResourcesByExtension(String extension) {
-        String[] array = System.getProperty("java.class.path", ".").split(System.getProperty("path.separator"));
-        List<String> asd = Arrays.asList(array);
+    private List<String> getScesimAssets() {
+        try (Stream<Path> fileStream = Files.walk(Paths.get("."))) {
+            System.out.println("bib");
+            List<String> pio = fileStream.filter(path -> filterResource(path, ".scesim"))
+                    .map(Path::toFile)
+                    .map(File::getAbsolutePath)
+                    .collect(toList());
+            pio.stream().forEach(System.out::println);
 
-        if (array.length == 1 && array[0].endsWith("-dev.jar")) {
-            String classPath = array[0];
-            //System.out.println(classPath);
-            String base = classPath.substring(0, classPath.lastIndexOf("/"));
-            //System.out.println(base);
-            String first = base.concat("/test-classes");
-            String second = base.concat("/classes");
-            //System.out.println(first);
-            //System.out.println(second);
-            asd = new ArrayList<>();
-            asd.add(first);
+            return pio;
+
+        } catch (IOException e) {
+            System.out.println("AAAAAAAAAAAAAAAAAAAAAAA" + e);
+            e.printStackTrace();
+            return Collections.emptyList();
         }
-
-        //asd.forEach(elem -> System.out.println("Discover in " + elem));
-        //System.out.println(asd.size());
-
-        return asd.stream().flatMap((elem) -> internalGetResources(elem, Pattern.compile(".*\\." + extension + "$")));
     }
 
-    static Stream<String> internalGetResources(String path, Pattern pattern) {
-        File file = new File(path);
-        return !file.isDirectory() ? Stream.empty() : getResourcesFromDirectory(file, pattern);
-    }
-
-    public static Stream<String> getResourcesFromDirectory(File directory, Pattern pattern) {
-        return directory != null && directory.listFiles() != null ? Arrays.stream(directory.listFiles()).flatMap((elem) -> {
-            if (elem.isDirectory()) {
-                return getResourcesFromDirectory(elem, pattern);
-            } else {
-                try {
-                    String fileName = elem.getCanonicalPath();
-                    if (pattern.matcher(fileName).matches()) {
-                        return Stream.of(fileName);
-                    }
-                } catch (IOException var3) {
-                    throw new ScenarioException("Impossible to access to resources", var3);
-                }
-
-                return Stream.empty();
-            }
-        }) : Stream.empty();
+    private boolean filterResource(Path path, String extension) {
+        return path.toString().endsWith(extension) && !path.toString().contains("/target/") && Files.isRegularFile(path);
     }
 
     @Override
     public TestDescriptor discover(EngineDiscoveryRequest discoveryRequest, UniqueId uniqueId) {
+        System.out.println(uniqueId);
         EngineDescriptor parentDescriptor = new EngineDescriptor(uniqueId, "Kogito Test Scenario");
-
-        Stream<String> resourcesByExtension = getResourcesByExtension(FILE_EXTENSION);
-
-        resourcesByExtension.map(this::parseFile).forEach(scesim -> {
+        getScesimAssets().stream().map(this::parseFile).forEach(scesim -> {
             String fileName = getScesimFileName(scesim.getFileName());
             //System.out.println("1-Filename:" + fileName);
             KogitoTestScenarioSuiteTestDescriptor suite = new KogitoTestScenarioSuiteTestDescriptor(uniqueId, fileName);
@@ -125,22 +96,23 @@ public class KogitoTestScenarioEngine implements TestEngine {
         // System.out.println(parentDescriptor.getChildren().size());
         return parentDescriptor;
     }
-
-    public static Description getDescriptionForSimulation(Optional<String> fullFileName, List<ScenarioWithIndex> scenarios) {
-        String testSuiteName = fullFileName.isPresent() ? getScesimFileName(fullFileName.get()) : AbstractScenarioRunner.class.getSimpleName();
-        Description suiteDescription = Description.createSuiteDescription(testSuiteName);
-        scenarios.forEach(scenarioWithIndex -> suiteDescription.addChild(
-                getDescriptionForScenario(fullFileName,
-                        scenarioWithIndex.getIndex(),
-                        scenarioWithIndex.getScesimData().getDescription())));
-        return suiteDescription;
-    }
-
-    public static Description getDescriptionForScenario(Optional<String> fullFileName, int index, String description) {
-        String testName = fullFileName.isPresent() ? getScesimFileName(fullFileName.get()) : AbstractScenarioRunner.class.getSimpleName();
-        return Description.createTestDescription(testName,
-                String.format("#%d: %s", index, description));
-    }
+    /*
+     * public static Description getDescriptionForSimulation(Optional<String> fullFileName, List<ScenarioWithIndex> scenarios) {
+     * String testSuiteName = fullFileName.isPresent() ? getScesimFileName(fullFileName.get()) : AbstractScenarioRunner.class.getSimpleName();
+     * Description suiteDescription = Description.createSuiteDescription(testSuiteName);
+     * scenarios.forEach(scenarioWithIndex -> suiteDescription.addChild(
+     * getDescriptionForScenario(fullFileName,
+     * scenarioWithIndex.getIndex(),
+     * scenarioWithIndex.getScesimData().getDescription())));
+     * return suiteDescription;
+     * }
+     * 
+     * public static Description getDescriptionForScenario(Optional<String> fullFileName, int index, String description) {
+     * String testName = fullFileName.isPresent() ? getScesimFileName(fullFileName.get()) : AbstractScenarioRunner.class.getSimpleName();
+     * return Description.createTestDescription(testName,
+     * String.format("#%d: %s", index, description));
+     * }
+     */
 
     public static String getScesimFileName(String fileFullPath) {
         if (fileFullPath == null) {
