@@ -58,7 +58,7 @@ public class KogitoTestScenarioEngine implements TestEngine {
 
     private List<String> getScesimAssets() {
         try (Stream<Path> fileStream = Files.walk(Paths.get("."))) {
-            System.out.println("bib");
+            System.out.println("Retrieving SCESIM assets....");
             List<String> pio = fileStream.filter(path -> filterResource(path, ".scesim"))
                     .map(Path::toFile)
                     .map(File::getAbsolutePath)
@@ -68,7 +68,6 @@ public class KogitoTestScenarioEngine implements TestEngine {
             return pio;
 
         } catch (IOException e) {
-            System.out.println("AAAAAAAAAAAAAAAAAAAAAAA" + e);
             e.printStackTrace();
             return Collections.emptyList();
         }
@@ -80,7 +79,7 @@ public class KogitoTestScenarioEngine implements TestEngine {
 
     @Override
     public TestDescriptor discover(EngineDiscoveryRequest discoveryRequest, UniqueId uniqueId) {
-        System.out.println(uniqueId);
+        System.out.println(uniqueId + " Discovering Tests....");
         EngineDescriptor parentDescriptor = new EngineDescriptor(uniqueId, "Kogito Test Scenario");
         getScesimAssets().stream().map(this::parseFile).forEach(scesim -> {
             String fileName = getScesimFileName(scesim.getFileName());
@@ -125,7 +124,7 @@ public class KogitoTestScenarioEngine implements TestEngine {
 
     @Override
     public void execute(ExecutionRequest executionRequest) {
-        //System.out.println("execute");
+        System.out.println("executing tests ...");
         TestDescriptor testDescriptorEngine = executionRequest.getRootTestDescriptor();
         EngineExecutionListener listener = executionRequest.getEngineExecutionListener();
         KogitoDMNScenarioRunnerHelper scenarioRunnerHelper = new KogitoDMNScenarioRunnerHelper();
