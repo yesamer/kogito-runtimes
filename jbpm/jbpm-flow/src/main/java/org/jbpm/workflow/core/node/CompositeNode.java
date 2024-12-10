@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.core.node;
 
@@ -20,21 +23,24 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
+import org.jbpm.ruleflow.core.WorkflowElementIdentifierFactory;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.NodeContainer;
 import org.jbpm.workflow.core.impl.ConnectionImpl;
 import org.jbpm.workflow.core.impl.NodeContainerImpl;
 import org.jbpm.workflow.core.impl.NodeImpl;
 import org.kie.api.definition.process.Connection;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
 
 public class CompositeNode extends StateBasedNode implements NodeContainer, EventNodeInterface {
 
     private static final long serialVersionUID = 510l;
 
     private NodeContainer nodeContainer;
-    private Map<String, CompositeNode.NodeAndType> inConnectionMap = new HashMap<String, CompositeNode.NodeAndType>();
-    private Map<String, CompositeNode.NodeAndType> outConnectionMap = new HashMap<String, CompositeNode.NodeAndType>();
+    private Map<String, CompositeNode.NodeAndType> inConnectionMap = new HashMap<>();
+    private Map<String, CompositeNode.NodeAndType> outConnectionMap = new HashMap<>();
     private boolean cancelRemainingInstances = true;
     private boolean autoComplete = true;
 
@@ -42,7 +48,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         this.nodeContainer = new NodeContainerImpl();
     }
 
-    public org.kie.api.definition.process.Node getNode(long id) {
+    public org.kie.api.definition.process.Node getNode(WorkflowElementIdentifier id) {
         return nodeContainer.getNode(id);
     }
 
@@ -51,16 +57,17 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         throw new UnsupportedOperationException();
     }
 
+    @Override
     public NodeContainer getNodeContainer() {
         return nodeContainer;
     }
 
-    public org.kie.api.definition.process.Node internalGetNode(long id) {
+    public org.kie.api.definition.process.Node internalGetNode(WorkflowElementIdentifier id) {
         return getNode(id);
     }
 
     public org.kie.api.definition.process.Node[] getNodes() {
-        List<org.kie.api.definition.process.Node> subNodes = new ArrayList<org.kie.api.definition.process.Node>();
+        List<org.kie.api.definition.process.Node> subNodes = new ArrayList<>();
         for (org.kie.api.definition.process.Node node : nodeContainer.getNodes()) {
             if (!(node instanceof CompositeNode.CompositeNodeStart) &&
                     !(node instanceof CompositeNode.CompositeNodeEnd)) {
@@ -75,18 +82,6 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
     }
 
     public void addNode(org.kie.api.definition.process.Node node) {
-        // TODO find a more elegant solution for this
-        // preferrable remove id setting from this class
-        // and delegate to GUI command that drops node
-        if (node.getId() <= 0) {
-            long id = 0;
-            for (org.kie.api.definition.process.Node n : nodeContainer.getNodes()) {
-                if (n.getId() > id) {
-                    id = n.getId();
-                }
-            }
-            ((Node) node).setId(++id);
-        }
         nodeContainer.addNode(node);
         ((Node) node).setParentContainer(this);
     }
@@ -104,10 +99,11 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         removeNode(node);
     }
 
-    public boolean acceptsEvent(String type, Object event) {
+    @Override
+    public boolean acceptsEvent(String type, Object event, Function<String, Object> varResolver) {
         for (org.kie.api.definition.process.Node node : internalGetNodes()) {
             if (node instanceof EventNodeInterface) {
-                if (((EventNodeInterface) node).acceptsEvent(type, event)) {
+                if (((EventNodeInterface) node).acceptsEvent(type, event, varResolver)) {
                     return true;
                 }
             }
@@ -115,7 +111,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         return false;
     }
 
-    public void linkIncomingConnections(String inType, long inNodeId, String inNodeType) {
+    public void linkIncomingConnections(String inType, WorkflowElementIdentifier inNodeId, String inNodeType) {
         linkIncomingConnections(inType, new NodeAndType(nodeContainer, inNodeId, inNodeType));
     }
 
@@ -153,7 +149,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
-    public void linkOutgoingConnections(long outNodeId, String outNodeType, String outType) {
+    public void linkOutgoingConnections(WorkflowElementIdentifier outNodeId, String outNodeType, String outType) {
         linkOutgoingConnections(new NodeAndType(this, outNodeId, outNodeType), outType);
     }
 
@@ -213,6 +209,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         return outConnectionMap;
     }
 
+    @Override
     public void validateAddIncomingConnection(final String type, final Connection connection) {
         CompositeNode.NodeAndType nodeAndType = internalGetLinkedIncomingNode(type);
         if (((Node) connection.getFrom()).getParentContainer() == this) {
@@ -229,6 +226,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void addIncomingConnection(String type, Connection connection) {
         if (((Node) connection.getFrom()).getParentContainer() == this) {
             linkOutgoingConnections(connection.getFrom().getId(), connection.getFromType(), Node.CONNECTION_DEFAULT_TYPE);
@@ -248,6 +246,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void validateAddOutgoingConnection(final String type, final Connection connection) {
         CompositeNode.NodeAndType nodeAndType = internalGetLinkedOutgoingNode(type);
         if (((Node) connection.getTo()).getParentContainer() == this) {
@@ -264,6 +263,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void addOutgoingConnection(String type, Connection connection) {
         if (((Node) connection.getTo()).getParentContainer() == this) {
             linkIncomingConnections(
@@ -285,6 +285,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void validateRemoveIncomingConnection(final String type, final Connection connection) {
         CompositeNode.NodeAndType nodeAndType = internalGetLinkedIncomingNode(type);
         if (nodeAndType != null) {
@@ -299,6 +300,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void removeIncomingConnection(String type, Connection connection) {
         super.removeIncomingConnection(type, connection);
         CompositeNode.NodeAndType nodeAndType = internalGetLinkedIncomingNode(type);
@@ -316,6 +318,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void validateRemoveOutgoingConnection(final String type, final Connection connection) {
         CompositeNode.NodeAndType nodeAndType = internalGetLinkedOutgoingNode(type);
         if (nodeAndType != null) {
@@ -330,6 +333,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
     }
 
+    @Override
     public void removeOutgoingConnection(String type, Connection connection) {
         super.removeOutgoingConnection(type, connection);
         CompositeNode.NodeAndType nodeAndType = internalGetLinkedOutgoingNode(type);
@@ -368,11 +372,11 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         private static final long serialVersionUID = 510l;
 
         private NodeContainer nodeContainer;
-        private long nodeId;
+        private WorkflowElementIdentifier nodeId;
         private String type;
         private transient org.kie.api.definition.process.Node node;
 
-        public NodeAndType(NodeContainer nodeContainer, long nodeId, String type) {
+        public NodeAndType(NodeContainer nodeContainer, WorkflowElementIdentifier nodeId, String type) {
             if (type == null) {
                 throw new IllegalArgumentException(
                         "Node or type may not be null!");
@@ -403,7 +407,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
             return node;
         }
 
-        public long getNodeId() {
+        public WorkflowElementIdentifier getNodeId() {
             return nodeId;
         }
 
@@ -420,7 +424,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         }
 
         public int hashCode() {
-            return 7 * (int) nodeId + 13 * type.hashCode();
+            return 7 * nodeId.hashCode() + 13 * type.hashCode();
         }
 
     }
@@ -430,11 +434,12 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         private static final long serialVersionUID = 510l;
 
         private CompositeNode parentNode;
-        private long inNodeId;
+        private WorkflowElementIdentifier inNodeId;
         private transient org.kie.api.definition.process.Node inNode;
         private String inType;
 
         public CompositeNodeStart(CompositeNode parentNode, org.kie.api.definition.process.Node outNode, String outType) {
+            setId(WorkflowElementIdentifierFactory.fromExternalFormat(parentNode.getId().toExternalFormat() + ":composite:start"));
             setName("Composite node start");
             this.inNodeId = outNode.getId();
             this.inNode = outNode;
@@ -450,7 +455,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
             return inNode;
         }
 
-        public long getInNodeId() {
+        public WorkflowElementIdentifier getInNodeId() {
             return inNodeId;
         }
 
@@ -465,11 +470,12 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
         private static final long serialVersionUID = 510l;
 
         private CompositeNode parentNode;
-        private long outNodeId;
+        private WorkflowElementIdentifier outNodeId;
         private transient org.kie.api.definition.process.Node outNode;
         private String outType;
 
         public CompositeNodeEnd(CompositeNode parentNode, org.kie.api.definition.process.Node outNode, String outType) {
+            setId(WorkflowElementIdentifierFactory.fromExternalFormat(parentNode.getId().toExternalFormat() + ":composite:end"));
             setName("Composite node end");
             this.outNodeId = outNode.getId();
             this.outNode = outNode;
@@ -485,7 +491,7 @@ public class CompositeNode extends StateBasedNode implements NodeContainer, Even
             return outNode;
         }
 
-        public long getOutNodeId() {
+        public WorkflowElementIdentifier getOutNodeId() {
             return outNodeId;
         }
 

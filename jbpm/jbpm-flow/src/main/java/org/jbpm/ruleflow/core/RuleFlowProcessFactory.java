@@ -1,44 +1,51 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.ruleflow.core;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 
+import org.jbpm.process.core.ContextContainer;
+import org.jbpm.process.core.ContextResolver;
 import org.jbpm.process.core.context.exception.ActionExceptionHandler;
-import org.jbpm.process.core.context.exception.CompensationScope;
-import org.jbpm.process.core.context.exception.ExceptionHandler;
 import org.jbpm.process.core.context.exception.ExceptionScope;
 import org.jbpm.process.core.context.swimlane.Swimlane;
 import org.jbpm.process.core.context.variable.Variable;
 import org.jbpm.process.core.datatype.DataType;
-import org.jbpm.process.core.datatype.impl.type.ObjectDataType;
+import org.jbpm.process.core.datatype.DataTypeResolver;
 import org.jbpm.process.core.event.EventFilter;
 import org.jbpm.process.core.event.EventTypeFilter;
 import org.jbpm.process.core.timer.Timer;
 import org.jbpm.process.core.validation.ProcessValidationError;
 import org.jbpm.process.instance.impl.Action;
+import org.jbpm.process.instance.impl.ReturnValueEvaluator;
 import org.jbpm.process.instance.impl.actions.CancelNodeInstanceAction;
 import org.jbpm.process.instance.impl.actions.SignalProcessInstanceAction;
+import org.jbpm.process.instance.impl.util.VariableUtil;
 import org.jbpm.ruleflow.core.validation.RuleFlowProcessValidator;
 import org.jbpm.workflow.core.DroolsAction;
+import org.jbpm.workflow.core.WorkflowModelValidator;
 import org.jbpm.workflow.core.impl.DroolsConsequenceAction;
 import org.jbpm.workflow.core.node.CompositeNode;
 import org.jbpm.workflow.core.node.EventNode;
@@ -49,15 +56,20 @@ import org.jbpm.workflow.core.node.StateBasedNode;
 import org.jbpm.workflow.core.node.Trigger;
 import org.kie.api.definition.process.Node;
 import org.kie.api.definition.process.NodeContainer;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
+import org.kie.kogito.internal.process.runtime.KogitoNode;
 
+import static org.jbpm.process.core.context.exception.ExceptionScope.EXCEPTION_SCOPE;
 import static org.jbpm.ruleflow.core.Metadata.ACTION;
 import static org.jbpm.ruleflow.core.Metadata.ATTACHED_TO;
 import static org.jbpm.ruleflow.core.Metadata.CANCEL_ACTIVITY;
+import static org.jbpm.ruleflow.core.Metadata.ERROR_EVENT;
+import static org.jbpm.ruleflow.core.Metadata.ERROR_STRUCTURE_REF;
+import static org.jbpm.ruleflow.core.Metadata.HAS_ERROR_EVENT;
 import static org.jbpm.ruleflow.core.Metadata.SIGNAL_NAME;
 import static org.jbpm.ruleflow.core.Metadata.TIME_CYCLE;
 import static org.jbpm.ruleflow.core.Metadata.TIME_DATE;
 import static org.jbpm.ruleflow.core.Metadata.TIME_DURATION;
-import static org.jbpm.ruleflow.core.Metadata.UNIQUE_ID;
 import static org.jbpm.workflow.core.impl.ExtendedNodeImpl.EVENT_NODE_EXIT;
 
 public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlowProcessFactory, RuleFlowProcessFactory> {
@@ -66,6 +78,7 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
     public static final String METHOD_PACKAGE_NAME = "packageName";
     public static final String METHOD_DYNAMIC = "dynamic";
     public static final String METHOD_VERSION = "version";
+    public static final String METHOD_TYPE = "type";
     public static final String METHOD_VISIBILITY = "visibility";
     public static final String METHOD_VALIDATE = "validate";
     public static final String METHOD_IMPORTS = "imports";
@@ -73,23 +86,40 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
     public static final String METHOD_VARIABLE = "variable";
     public static final String METHOD_ADD_COMPENSATION_CONTEXT = "addCompensationContext";
     public static final String METHOD_ERROR_EXCEPTION_HANDLER = "errorExceptionHandler";
+    public static final String ERROR_TYPE_PREFIX = "Error-";
+    public static final String MESSAGE_TYPE_PREFIX = "Message-";
+    public static final String TIMER_TYPE_PREFIX = "Timer-";
 
     public static RuleFlowProcessFactory createProcess(String id) {
-        return new RuleFlowProcessFactory(id);
+        return createProcess(id, true);
     }
 
-    protected RuleFlowProcessFactory(String id) {
-        super(null, null, new RuleFlowProcess(), id);
-        getRuleFlowProcess().setAutoComplete(true);
+    public static RuleFlowProcessFactory createProcess(String id, boolean autoComplete) {
+        return new RuleFlowProcessFactory(id, autoComplete);
     }
 
     @Override
-    protected void setId(Object node, Object id) {
-        getRuleFlowProcess().setId((String) id);
+    protected org.jbpm.workflow.core.NodeContainer getNodeContainer() {
+        return nodeContainer;
+    }
+
+    protected RuleFlowProcessFactory(String id, boolean autoComplete) {
+        super(null, new RuleFlowProcess(), null, WorkflowElementIdentifierFactory.fromExternalFormat(id));
+        getRuleFlowProcess().setAutoComplete(autoComplete);
+    }
+
+    @Override
+    protected void setId(Object node, WorkflowElementIdentifier id) {
+        getRuleFlowProcess().setId(id.toExternalFormat());
+    }
+
+    public RuleFlowProcessFactory expressionLanguage(String exprLanguage) {
+        getRuleFlowProcess().setExpressionLanguage(exprLanguage);
+        return this;
     }
 
     protected RuleFlowProcess getRuleFlowProcess() {
-        return (RuleFlowProcess) node;
+        return (RuleFlowProcess) nodeContainer;
     }
 
     @Override
@@ -109,11 +139,26 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
         return this;
     }
 
+    public RuleFlowProcessFactory type(String type) {
+        getRuleFlowProcess().setType(type);
+        return this;
+    }
+
     public RuleFlowProcessFactory dynamic(boolean dynamic) {
         getRuleFlowProcess().setDynamic(dynamic);
         if (dynamic) {
             getRuleFlowProcess().setAutoComplete(false);
         }
+        return this;
+    }
+
+    public RuleFlowProcessFactory outputValidator(WorkflowModelValidator validator) {
+        getRuleFlowProcess().setOutputValidator(validator);
+        return this;
+    }
+
+    public RuleFlowProcessFactory inputValidator(WorkflowModelValidator validator) {
+        getRuleFlowProcess().setInputValidator(validator);
         return this;
     }
 
@@ -145,7 +190,7 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
     public RuleFlowProcessFactory global(String name, String type) {
         Map<String, String> globals = getRuleFlowProcess().getGlobals();
         if (globals == null) {
-            globals = new HashMap<String, String>();
+            globals = new HashMap<>();
             getRuleFlowProcess().setGlobals(globals);
         }
         globals.put(name, type);
@@ -153,29 +198,35 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
     }
 
     public RuleFlowProcessFactory variable(String name, Class<?> clazz) {
-        return variable(name, new ObjectDataType(clazz.getName()), null);
+        return variable(name, DataTypeResolver.fromClass(clazz), null);
     }
 
+    @Override
     public RuleFlowProcessFactory variable(String name, DataType type) {
-        return variable(name, type, null);
+        return variable(name, type, Collections.emptyMap());
     }
 
+    @Override
     public RuleFlowProcessFactory variable(String name, DataType type, Object value) {
-        return variable(name, type, value, null, null);
+        return variable(name, type, value, Collections.emptyMap());
     }
 
-    public RuleFlowProcessFactory variable(String name, DataType type, String metaDataName, Object metaDataValue) {
-        return variable(name, type, null, metaDataName, metaDataValue);
+    @Override
+    public RuleFlowProcessFactory variable(String name, DataType type, Map<String, Object> metadata) {
+        return this.variable(name, type, null, metadata);
     }
 
-    public RuleFlowProcessFactory variable(String name, DataType type, Object value, String metaDataName, Object metaDataValue) {
+    @Override
+    public RuleFlowProcessFactory variable(String name, DataType type, Object value, Map<String, Object> metadata) {
         Variable variable = new Variable();
         variable.setName(name);
         variable.setType(type);
-        variable.setValue(value);
-        if (metaDataName != null && metaDataValue != null) {
-            variable.setMetaData(metaDataName, metaDataValue);
+        variable.setValue(type.verifyDataType(value) ? value : type.readValue((String) value));
+
+        for (Map.Entry<String, Object> entry : metadata.entrySet()) {
+            variable.setMetaData(entry.getKey(), entry.getValue());
         }
+
         getRuleFlowProcess().getVariableScope().getVariables().add(variable);
         return this;
     }
@@ -187,48 +238,39 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
         return this;
     }
 
-    public RuleFlowProcessFactory addCompensationContext(String contextId) {
-        CompensationScope compensationScope = new CompensationScope();
-        compensationScope.setContextContainerId(contextId);
-        getRuleFlowProcess().addContext(compensationScope);
-        getRuleFlowProcess().setDefaultContext(compensationScope);
-        return this;
-    }
-
-    @Override
-    public RuleFlowProcessFactory exceptionHandler(String exception, ExceptionHandler exceptionHandler) {
-        getRuleFlowProcess().getExceptionScope().setExceptionHandler(exception, exceptionHandler);
-        return this;
-    }
-
-    @Override
-    public RuleFlowProcessFactory exceptionHandler(String exception, String dialect, String action) {
-        ActionExceptionHandler exceptionHandler = new ActionExceptionHandler();
-        exceptionHandler.setAction(new DroolsConsequenceAction(dialect, action));
-        return exceptionHandler(exception, exceptionHandler);
-    }
-
-    public RuleFlowProcessFactory errorExceptionHandler(String signalType, String faultCode, String faultVariable) {
-        ActionExceptionHandler exceptionHandler = new ActionExceptionHandler();
-        DroolsConsequenceAction action = new DroolsConsequenceAction("java", "");
-        action.setMetaData("Action", new SignalProcessInstanceAction(signalType, faultVariable, SignalProcessInstanceAction.PROCESS_INSTANCE_SCOPE));
-        exceptionHandler.setAction(action);
-        exceptionHandler.setFaultVariable(faultVariable);
-
-        if (Objects.isNull(getRuleFlowProcess().getExceptionScope())) {
-            getRuleFlowProcess().addContext(new ExceptionScope());
-        }
-
-        getRuleFlowProcess().getExceptionScope().setExceptionHandler(faultCode, exceptionHandler);
-        return this;
-    }
-
     public RuleFlowProcessFactory validate() {
         link();
         ProcessValidationError[] errors = RuleFlowProcessValidator.getInstance().validateProcess(getRuleFlowProcess());
         if (errors.length > 0) {
             throw new IllegalStateException("Process could not be validated !" + Arrays.toString(errors));
         }
+        return this;
+    }
+
+    public RuleFlowProcessFactory newCorrelationMessage(String messageId, String messageName, String messageType) {
+        RuleFlowProcess process = getRuleFlowProcess();
+        process.getCorrelationManager().newMessage(messageId, messageName, messageType);
+        return this;
+    }
+
+    public RuleFlowProcessFactory newCorrelationKey(String correlationKey, String correlationName) {
+        RuleFlowProcess process = getRuleFlowProcess();
+        process.getCorrelationManager().newCorrelation(correlationKey, correlationName);
+        return this;
+    }
+
+    public RuleFlowProcessFactory newCorrelationProperty(String correlationKeyId, String messageId, String propertyId, ReturnValueEvaluator evaluator) {
+        RuleFlowProcess process = getRuleFlowProcess();
+        process.getCorrelationManager().addMessagePropertyExpression(correlationKeyId, messageId, propertyId, evaluator);
+        return this;
+    }
+
+    public RuleFlowProcessFactory newCorrelationSubscription(String correlationKeyId, String propertyId, ReturnValueEvaluator evaluator) {
+        RuleFlowProcess process = getRuleFlowProcess();
+        if (!process.getCorrelationManager().isSubscribe(correlationKeyId)) {
+            process.getCorrelationManager().subscribeTo(correlationKeyId);
+        }
+        process.getCorrelationManager().addProcessSubscriptionPropertyExpression(correlationKeyId, propertyId, evaluator);
         return this;
     }
 
@@ -259,11 +301,13 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
                 if (attachedTo != null) {
                     Node attachedNode = findNodeByIdOrUniqueIdInMetadata(nodeContainer, attachedTo, "Could not find node to attach to: " + attachedTo);
                     for (EventFilter filter : ((EventNode) node).getEventFilters()) {
-                        String type = ((EventTypeFilter) filter).getType();
-                        if (type.startsWith("Timer-")) {
+                        final String type = Optional.ofNullable(((EventTypeFilter) filter).getType()).orElse("");
+                        if (type.startsWith(TIMER_TYPE_PREFIX)) {
                             linkBoundaryTimerEvent(node, attachedTo, attachedNode);
-                        } else if (node.getMetaData().get(SIGNAL_NAME) != null || type.startsWith("Message-")) {
+                        } else if (node.getMetaData().get(SIGNAL_NAME) != null || type.startsWith(MESSAGE_TYPE_PREFIX)) {
                             linkBoundarySignalEvent(node, attachedTo);
+                        } else if (type.startsWith(ERROR_TYPE_PREFIX)) {
+                            linkBoundaryErrorEvent(node, attachedTo, attachedNode);
                         }
                     }
                 }
@@ -281,7 +325,7 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
         if (timeDuration != null) {
             timer.setDelay(timeDuration);
             timer.setTimeType(Timer.TIME_DURATION);
-            compositeNode.addTimer(timer, timerAction("Timer-" + attachedTo + "-" + timeDuration + "-" + node.getId()));
+            compositeNode.addTimer(timer, timerAction(TIMER_TYPE_PREFIX + attachedTo + "-" + timeDuration + "-" + node.getId().toExternalFormat()));
         } else if (timeCycle != null) {
             int index = timeCycle.indexOf("###");
             if (index != -1) {
@@ -291,11 +335,12 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
             }
             timer.setDelay(timeCycle);
             timer.setTimeType(Timer.TIME_CYCLE);
-            compositeNode.addTimer(timer, timerAction("Timer-" + attachedTo + "-" + timeCycle + (timer.getPeriod() == null ? "" : "###" + timer.getPeriod()) + "-" + node.getId()));
+            compositeNode.addTimer(timer,
+                    timerAction(TIMER_TYPE_PREFIX + attachedTo + "-" + timeCycle + (timer.getPeriod() == null ? "" : "###" + timer.getPeriod()) + "-" + node.getId().toExternalFormat()));
         } else if (timeDate != null) {
             timer.setDate(timeDate);
             timer.setTimeType(Timer.TIME_DATE);
-            compositeNode.addTimer(timer, timerAction("Timer-" + attachedTo + "-" + timeDate + "-" + node.getId()));
+            compositeNode.addTimer(timer, timerAction(TIMER_TYPE_PREFIX + attachedTo + "-" + timeDate + "-" + node.getId().toExternalFormat()));
         }
 
         if (cancelActivity) {
@@ -324,28 +369,80 @@ public class RuleFlowProcessFactory extends RuleFlowNodeContainerFactory<RuleFlo
         }
     }
 
+    protected void linkBoundaryErrorEvent(Node node, String attachedTo, Node attachedNode) {
+        //same logic from ProcessHandler.linkBoundaryErrorEvent
+        final String errorCode = (String) node.getMetaData().get(ERROR_EVENT);
+        final ContextResolver compositeNode = (ContextResolver) attachedNode;
+        ExceptionScope exceptionScope = (ExceptionScope) compositeNode.resolveContext(EXCEPTION_SCOPE, errorCode);
+        if (exceptionScope == null) {
+            ContextContainer contextContainer = (ContextContainer) (node instanceof ContextContainer ? node : ((KogitoNode) node).getParentContainer());
+            exceptionScope = new ExceptionScope();
+            contextContainer.addContext(exceptionScope);
+            contextContainer.setDefaultContext(exceptionScope);
+        }
+        final Boolean hasErrorCode = (Boolean) node.getMetaData().get(HAS_ERROR_EVENT);
+        final String errorStructureRef = (String) node.getMetaData().get(ERROR_STRUCTURE_REF);
+        final ActionExceptionHandler exceptionHandler = new ActionExceptionHandler();
+        final EventNode eventNode = (EventNode) node;
+        final String variable = eventNode.getVariableName();
+        final String inputVariable = eventNode.getInputVariableName();
+
+        final DroolsConsequenceAction signalAction = new DroolsConsequenceAction("java", null);
+        signalAction.setMetaData(ACTION,
+                new SignalProcessInstanceAction(ERROR_TYPE_PREFIX + attachedTo + "-" + errorCode, variable, inputVariable, SignalProcessInstanceAction.PROCESS_INSTANCE_SCOPE));
+        exceptionHandler.setAction(signalAction);
+        exceptionHandler.setFaultVariable(variable);
+        final String code = Optional.ofNullable(hasErrorCode)
+                .filter(Boolean.TRUE::equals)
+                .map(v -> errorCode)
+                .orElse(null);
+        exceptionScope.setExceptionHandler(code, exceptionHandler);
+
+        if (errorStructureRef != null) {
+            exceptionScope.setExceptionHandler(errorStructureRef, exceptionHandler);
+        }
+
+        final DroolsConsequenceAction cancelAction = new DroolsConsequenceAction("java", null);
+        cancelAction.setMetaData("Action", new CancelNodeInstanceAction(attachedTo));
+        final List<DroolsAction> actions = Optional
+                .ofNullable(eventNode.getActions(EVENT_NODE_EXIT))
+                .orElseGet(ArrayList::new);
+        actions.add(cancelAction);
+        eventNode.setActions(EVENT_NODE_EXIT, actions);
+    }
+
     protected DroolsAction timerAction(String type) {
         DroolsAction signal = new DroolsAction();
-
-        Action action = kcontext -> kcontext.getProcessInstance().signalEvent(type, kcontext.getNodeInstance().getStringId());
+        Action action = kcontext -> {
+            String eventType = VariableUtil.resolveVariable(type, kcontext.getNodeInstance());
+            kcontext.getProcessInstance().signalEvent(eventType, kcontext.getNodeInstance().getStringId());
+        };
         signal.wire(action);
 
         return signal;
     }
 
     protected Node findNodeByIdOrUniqueIdInMetadata(NodeContainer nodeContainer, final String nodeRef, String errorMsg) {
-        Node node = null;
-        // try looking for a node with same "UniqueId" (in metadata)
-        for (Node containerNode : nodeContainer.getNodes()) {
-            if (nodeRef.equals(containerNode.getMetaData().get(UNIQUE_ID))) {
-                node = containerNode;
-                break;
-            }
-        }
+        Node node = findNodeByUniqueId(nodeContainer, nodeRef);
         if (node == null) {
             throw new IllegalArgumentException(errorMsg);
         }
         return node;
+    }
+
+    private Node findNodeByUniqueId(NodeContainer nodeContainer, final String nodeRef) {
+        for (Node containedNode : nodeContainer.getNodes()) {
+            if (nodeRef.equals(containedNode.getUniqueId())) {
+                return containedNode;
+            }
+            if (containedNode instanceof NodeContainer) {
+                Node result = findNodeByUniqueId((NodeContainer) containedNode, nodeRef);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
     }
 
     private void postProcessNodes(RuleFlowProcess process, NodeContainer container) {

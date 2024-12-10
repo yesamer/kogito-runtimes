@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance;
 
@@ -23,10 +26,11 @@ import org.kie.api.event.process.ProcessEventManager;
 import org.kie.api.runtime.KieRuntime;
 import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.AgendaFilter;
+import org.kie.kogito.Application;
 import org.kie.kogito.internal.process.event.KogitoProcessEventSupport;
 import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.internal.process.runtime.KogitoProcessRuntime;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItemManager;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemManager;
 import org.kie.kogito.jobs.JobsService;
 
 public class KogitoProcessRuntimeImpl implements KogitoProcessRuntime {
@@ -154,20 +158,19 @@ public class KogitoProcessRuntimeImpl implements KogitoProcessRuntime {
     }
 
     public KogitoProcessInstance startProcessInstance(String processInstanceId, String trigger, AgendaFilter agendaFilter) {
-        try {
-            delegate.getInternalKieRuntime().startOperation();
+        KogitoProcessInstance processInstance = getProcessInstance(processInstanceId);
+        org.jbpm.process.instance.ProcessInstance jbpmProcessInstance = (org.jbpm.process.instance.ProcessInstance) processInstance;
 
-            KogitoProcessInstance processInstance = getProcessInstance(processInstanceId);
-            org.jbpm.process.instance.ProcessInstance jbpmProcessInstance = (org.jbpm.process.instance.ProcessInstance) processInstance;
+        jbpmProcessInstance.configureTimers();
+        delegate.getProcessEventSupport().fireBeforeProcessStarted(processInstance, delegate.getInternalKieRuntime());
+        jbpmProcessInstance.setAgendaFilter(agendaFilter);
+        jbpmProcessInstance.start(trigger);
+        delegate.getProcessEventSupport().fireAfterProcessStarted(processInstance, delegate.getInternalKieRuntime());
+        return jbpmProcessInstance;
+    }
 
-            jbpmProcessInstance.configureSLA();
-            delegate.getProcessEventSupport().fireBeforeProcessStarted(processInstance, delegate.getInternalKieRuntime());
-            jbpmProcessInstance.setAgendaFilter(agendaFilter);
-            jbpmProcessInstance.start(trigger);
-            delegate.getProcessEventSupport().fireAfterProcessStarted(processInstance, delegate.getInternalKieRuntime());
-            return jbpmProcessInstance;
-        } finally {
-            delegate.getInternalKieRuntime().endOperation();
-        }
+    @Override
+    public Application getApplication() {
+        return delegate.getApplication();
     }
 }

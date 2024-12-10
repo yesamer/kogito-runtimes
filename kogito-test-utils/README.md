@@ -1,11 +1,49 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
 # Common Utils For Kogito
 
-Add the common utils dependency in the _pom.xml_ file:
+Add the needed utils dependency in the _pom.xml_ file:
 
+### Framework agnostic
 ```xml
 <dependency>
   <groupId>org.kie.kogito</groupId>
   <artifactId>kogito-test-utils</artifactId>
+  <scope>test</scope>
+</dependency>
+```
+
+### Quarkus
+```xml
+<dependency>
+  <groupId>org.kie.kogito</groupId>
+  <artifactId>kogito-quarkus-test-utils</artifactId>
+  <scope>test</scope>
+</dependency>
+```
+
+### Spring Boot
+```xml
+<dependency>
+  <groupId>org.kie.kogito</groupId>
+  <artifactId>kogito-spring-boot-test-utils</artifactId>
   <scope>test</scope>
 </dependency>
 ```
@@ -24,16 +62,7 @@ public class MyTest {
 }
 ```
 
-And add the Infinispan properties in the _application.properties_:
-
-```
-#Infinispan
-quarkus.infinispan-client.use-auth=true
-quarkus.infinispan-client.auth-username=admin
-quarkus.infinispan-client.auth-password=admin
-```
-
-The property _quarkus.infinispan-client.server-list_ will be automatically populated with a random port.
+The property _quarkus.infinispan-client.hosts_ will be automatically populated with a random port.
 
 In case we want to run the container only if some requirements are met, we need to use it this way:
 
@@ -155,7 +184,7 @@ And make use of it:
 
 ```java
 @Autowired
-private KafkaClient kafkaClient;
+private KafkaTestClient kafkaClient;
 ``` 
 
 - In Kafka:

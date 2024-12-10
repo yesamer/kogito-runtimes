@@ -1,34 +1,37 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.prediction;
 
 import java.net.URLEncoder;
-import java.util.Collections;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
-import org.drools.core.util.StringUtils;
+import org.drools.codegen.common.AppPaths;
+import org.drools.codegen.common.di.impl.CDIDependencyInjectionAnnotator;
+import org.drools.util.StringUtils;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.kie.dmn.feel.codegen.feel11.CodegenStringUtil;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
 import org.kie.kogito.codegen.api.context.impl.SpringBootKogitoBuildContext;
-import org.kie.kogito.codegen.api.di.impl.CDIDependencyInjectionAnnotator;
 import org.kie.kogito.codegen.api.template.TemplatedGenerator;
 import org.kie.pmml.commons.model.KiePMMLModel;
 
@@ -43,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.kie.efesto.common.api.constants.Constants.INDEXFILE_DIRECTORY_PROPERTY;
 import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.CONTENT;
 import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.QUARKUS_API_RESPONSE;
 import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.QUARKUS_REQUEST_BODY;
@@ -52,6 +56,7 @@ import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.SCHEMA
 import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.SPRING_API_RESPONSE;
 import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.SPRING_REQUEST_BODY;
 import static org.kie.kogito.codegen.prediction.PMMLRestResourceGenerator.SPRING_SCHEMA;
+import static org.kie.kogito.pmml.CommonTestUtility.getKiePMMLModelInternal;
 import static org.kie.pmml.commons.utils.KiePMMLModelUtils.getSanitizedClassName;
 
 class PMMLRestResourceGeneratorTest {
@@ -66,22 +71,22 @@ class PMMLRestResourceGeneratorTest {
     private static PMMLRestResourceGenerator pmmlRestResourceGenerator;
     private static KogitoBuildContext context;
 
+    private static String expectedUrl;
+
     @BeforeAll
     public static void setup() {
         context = QuarkusKogitoBuildContext.builder().build();
         pmmlRestResourceGenerator = new PMMLRestResourceGenerator(context, KIE_PMML_MODEL, APP_CANONICAL_NAME);
         assertNotNull(pmmlRestResourceGenerator);
+        String filePrefix = URLEncoder.encode(getSanitizedClassName(KIE_PMML_MODEL.getFileName().replace(".pmml", "")));
+        String classPrefix = URLEncoder.encode(getSanitizedClassName(KIE_PMML_MODEL.getName()));
+        expectedUrl = String.format("/%s/%s", filePrefix, classPrefix);
+        System.setProperty(INDEXFILE_DIRECTORY_PROPERTY, String.format("%s/test-classes", AppPaths.TARGET_DIR));
     }
 
-    private static KiePMMLModel getKiePMMLModelInternal() {
-        String modelName = "MODEL_NAME";
-        return new KiePMMLModel(modelName, Collections.emptyList()) {
-
-            @Override
-            public Object evaluate(Object o, Map<String, Object> map) {
-                return null;
-            }
-        };
+    @AfterAll
+    public static void cleanup() {
+        System.clearProperty(INDEXFILE_DIRECTORY_PROPERTY);
     }
 
     private static ClassOrInterfaceDeclaration getClassOrInterfaceDeclaration(KogitoBuildContext context) {
@@ -122,9 +127,7 @@ class PMMLRestResourceGeneratorTest {
 
     @Test
     void getNameURL() {
-        String classPrefix = getSanitizedClassName(KIE_PMML_MODEL.getName());
-        String expected = URLEncoder.encode(classPrefix).replaceAll("\\+", " ");
-        assertEquals(expected, pmmlRestResourceGenerator.getNameURL());
+        assertEquals(expectedUrl, pmmlRestResourceGenerator.getNameURL());
     }
 
     @Test
@@ -155,9 +158,18 @@ class PMMLRestResourceGeneratorTest {
         SingleMemberAnnotationExpr retrieved = retrievedOpt.get();
         assertEquals("Path", retrieved.getName().asString());
         pmmlRestResourceGenerator.setPathValue(TEMPLATE);
-        String classPrefix = getSanitizedClassName(KIE_PMML_MODEL.getName());
-        String expected = URLEncoder.encode(classPrefix).replaceAll("\\+", " ");
-        assertEquals(expected, retrieved.getMemberValue().asStringLiteralExpr().asString());
+        assertEquals(expectedUrl, retrieved.getMemberValue().asStringLiteralExpr().asString());
+    }
+
+    @Test
+    void setPredictionFileName() {
+        assertTrue(TEMPLATE.getFieldByName("FILE_NAME").isPresent());
+        final FieldDeclaration modelName = TEMPLATE.getFieldByName("FILE_NAME").get();
+        assertFalse(modelName.getVariable(0).getInitializer().isPresent());
+        pmmlRestResourceGenerator.setPredictionFileName(TEMPLATE);
+        assertTrue(modelName.getVariable(0).getInitializer().isPresent());
+        assertEquals(KIE_PMML_MODEL.getFileName(),
+                modelName.getVariable(0).getInitializer().get().asStringLiteralExpr().asString());
     }
 
     @Test
@@ -310,7 +322,7 @@ class PMMLRestResourceGeneratorTest {
     private void commonEvaluateGenerate(String retrieved) {
         assertNotNull(retrieved);
         String classPrefix = getSanitizedClassName(KIE_PMML_MODEL.getName());
-        String expected = String.format("@Path(\"%s\")", classPrefix);
+        String expected = String.format("@Path(\"%s\")", expectedUrl);
         assertTrue(retrieved.contains(expected));
         expected = StringUtils.ucFirst(classPrefix) + "Resource";
         expected = String.format("public class %s extends org.kie.kogito.pmml.AbstractPMMLRestResource {", expected);

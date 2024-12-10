@@ -1,90 +1,59 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.persistence;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.NoSuchElementException;
-import java.util.Optional;
 
-import org.junit.jupiter.api.Test;
-import org.kie.kogito.codegen.api.AddonsConfig;
-import org.kie.kogito.codegen.api.GeneratedFile;
-import org.kie.kogito.codegen.api.GeneratedFileType;
+import org.drools.codegen.common.GeneratedFile;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
-import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
-import org.kie.kogito.codegen.data.Person;
+import org.kie.kogito.codegen.data.GeneratedPOJO;
+import org.kie.kogito.codegen.process.persistence.marshaller.ReflectionMarshallerGenerator;
 import org.kie.kogito.codegen.process.persistence.proto.ReflectionProtoGenerator;
 
-import com.github.javaparser.ast.CompilationUnit;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.stmt.ReturnStmt;
-
-import static com.github.javaparser.StaticJavaParser.parse;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.kie.kogito.codegen.process.persistence.PersistenceGenerator.KOGITO_PERSISTENCE_TYPE;
 import static org.kie.kogito.codegen.process.persistence.PersistenceGenerator.MONGODB_PERSISTENCE_TYPE;
+import static org.kie.kogito.codegen.process.persistence.PersistenceGenerator.hasDataIndexProto;
+import static org.kie.kogito.codegen.process.persistence.PersistenceGenerator.hasProtoMarshaller;
 
-class MongoDBPersistenceGeneratorTest {
+class MongoDBPersistenceGeneratorTest extends AbstractPersistenceGeneratorTest {
 
-    private static final String TEST_RESOURCES = "src/test/resources";
-    KogitoBuildContext context = QuarkusKogitoBuildContext.builder()
-            .withApplicationProperties(new File(TEST_RESOURCES))
-            .withPackageName(this.getClass().getPackage().getName())
-            .withAddonsConfig(AddonsConfig.builder().withPersistence(true).build())
-            .build();
+    @ParameterizedTest
+    @MethodSource("persistenceTestContexts")
+    void test(KogitoBuildContext context) {
+        context.setApplicationProperty(KOGITO_PERSISTENCE_TYPE, persistenceType());
 
-    @Test
-    void test() {
-        context.setApplicationProperty("kogito.persistence.type", MONGODB_PERSISTENCE_TYPE);
-
-        ReflectionProtoGenerator protoGenerator = ReflectionProtoGenerator.builder().build(Collections.singleton(Person.class));
-        PersistenceGenerator persistenceGenerator = new PersistenceGenerator(
-                context,
-                protoGenerator);
+        ReflectionProtoGenerator protoGenerator = ReflectionProtoGenerator.builder().build(Collections.singleton(GeneratedPOJO.class));
+        PersistenceGenerator persistenceGenerator = new PersistenceGenerator(context, protoGenerator, new ReflectionMarshallerGenerator(context));
         Collection<GeneratedFile> generatedFiles = persistenceGenerator.generate();
 
-        Optional<GeneratedFile> generatedCLASSFile = generatedFiles.stream().filter(gf -> gf.category() == GeneratedFileType.SOURCE.category()).findFirst();
-        assertTrue(generatedCLASSFile.isPresent());
-        GeneratedFile classFile = generatedCLASSFile.get();
-        assertEquals("org/kie/kogito/persistence/KogitoProcessInstancesFactoryImpl.java", classFile.relativePath());
+        int marshallerFiles = hasProtoMarshaller(context) ? 14 : 0;
+        int dataIndexFiles = hasDataIndexProto(context) ? 2 : 0;
+        int expectedNumberOfFiles = marshallerFiles + dataIndexFiles;
+        assertThat(generatedFiles).hasSize(expectedNumberOfFiles);
+    }
 
-        final CompilationUnit compilationUnit = parse(new ByteArrayInputStream(classFile.contents()));
-
-        final ClassOrInterfaceDeclaration classDeclaration =
-                compilationUnit.findFirst(ClassOrInterfaceDeclaration.class).orElseThrow(() -> new NoSuchElementException("Compilation unit doesn't contain a class or interface declaration!"));
-
-        assertNotNull(classDeclaration);
-
-        final MethodDeclaration methodDeclaration = classDeclaration.findFirst(MethodDeclaration.class, d -> d.getName().getIdentifier().equals("dbName"))
-                .orElseThrow(() -> new NoSuchElementException("Class declaration doesn't contain a method named \"dbName\"!"));
-        assertNotNull(methodDeclaration);
-        assertTrue(methodDeclaration.getBody().isPresent());
-
-        final BlockStmt body = methodDeclaration.getBody().get();
-        assertThat(body.getStatements().size()).isOne();
-        assertTrue(body.getStatements().get(0).isReturnStmt());
-
-        final ReturnStmt returnStmt = (ReturnStmt) body.getStatements().get(0);
-        assertThat(returnStmt.toString()).contains("kogito");
+    @Override
+    protected String persistenceType() {
+        return MONGODB_PERSISTENCE_TYPE;
     }
 }

@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.api;
 
@@ -24,6 +27,7 @@ public class AddonsConfig {
             .withPrometheusMonitoring(false)
             .withCloudEvents(false)
             .withExplainability(false)
+            .withEventDrivenDecisions(false)
             .build();
 
     private final boolean usePersistence;
@@ -33,9 +37,11 @@ public class AddonsConfig {
     private final boolean useCloudEvents;
     private final boolean useExplainability;
     private final boolean useProcessSVG;
+    private final boolean useEventDrivenDecisions;
+    private final boolean useEventDrivenRules;
 
     private AddonsConfig(boolean usePersistence, boolean useTracing, boolean useMonitoring, boolean usePrometheusMonitoring, boolean useCloudEvents,
-            boolean useExplainability, boolean useProcessSVG) {
+            boolean useExplainability, boolean useProcessSVG, boolean useEventDrivenDecisions, boolean useEventDrivenRules) {
         this.usePersistence = usePersistence;
         this.useTracing = useTracing;
         this.useMonitoring = useMonitoring;
@@ -43,6 +49,8 @@ public class AddonsConfig {
         this.useCloudEvents = useCloudEvents;
         this.useExplainability = useExplainability;
         this.useProcessSVG = useProcessSVG;
+        this.useEventDrivenDecisions = useEventDrivenDecisions;
+        this.useEventDrivenRules = useEventDrivenRules;
     }
 
     public static AddonsConfigBuilder builder() {
@@ -77,6 +85,14 @@ public class AddonsConfig {
         return useProcessSVG;
     }
 
+    public boolean useEventDrivenDecisions() {
+        return useEventDrivenDecisions;
+    }
+
+    public boolean useEventDrivenRules() {
+        return useEventDrivenRules;
+    }
+
     @Override
     public String toString() {
         return "AddonsConfig{" +
@@ -87,6 +103,8 @@ public class AddonsConfig {
                 ", useCloudEvents=" + useCloudEvents +
                 ", useExplainability=" + useExplainability +
                 ", useProcessSVG=" + useProcessSVG +
+                ", useEventDrivenDecisions=" + useEventDrivenDecisions +
+                ", useEventDrivenRules=" + useEventDrivenRules +
                 '}';
     }
 
@@ -99,6 +117,8 @@ public class AddonsConfig {
         private boolean useCloudEvents;
         private boolean useExplainability;
         private boolean useProcessSVG;
+        private boolean useEventDrivenDecisions;
+        private boolean useEventDrivenRules;
 
         private AddonsConfigBuilder() {
         }
@@ -138,8 +158,18 @@ public class AddonsConfig {
             return this;
         }
 
+        public AddonsConfigBuilder withEventDrivenDecisions(boolean useEventDrivenDecisions) {
+            this.useEventDrivenDecisions = useEventDrivenDecisions;
+            return this;
+        }
+
+        public AddonsConfigBuilder withEventDrivenRules(boolean useEventDrivenRules) {
+            this.useEventDrivenRules = useEventDrivenRules;
+            return this;
+        }
+
         public AddonsConfig build() {
-            return new AddonsConfig(usePersistence, useTracing, useMonitoring, usePrometheusMonitoring, useCloudEvents, useExplainability, useProcessSVG);
+            return new AddonsConfig(usePersistence, useTracing, useMonitoring, usePrometheusMonitoring, useCloudEvents, useExplainability, useProcessSVG, useEventDrivenDecisions, useEventDrivenRules);
         }
     }
 }

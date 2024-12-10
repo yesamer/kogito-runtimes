@@ -1,24 +1,28 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.compiler.canonical;
 
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.function.Supplier;
 
+import org.jbpm.compiler.canonical.descriptors.ExpressionUtils;
 import org.jbpm.compiler.canonical.descriptors.TaskDescriptor;
 import org.jbpm.compiler.canonical.descriptors.TaskDescriptorBuilder;
 import org.jbpm.process.core.Work;
@@ -29,7 +33,6 @@ import org.jbpm.workflow.core.node.WorkItemNode;
 import com.github.javaparser.ast.expr.BooleanLiteralExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
-import com.github.javaparser.ast.expr.LongLiteralExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.NullLiteralExpr;
@@ -40,6 +43,8 @@ import static org.jbpm.ruleflow.core.factory.WorkItemNodeFactory.METHOD_WORK_NAM
 import static org.jbpm.ruleflow.core.factory.WorkItemNodeFactory.METHOD_WORK_PARAMETER;
 
 public class WorkItemNodeVisitor<T extends WorkItemNode> extends AbstractNodeVisitor<T> {
+
+    private static final String METHOD_WORK_PARAMETER_FACTORY = "workParameterFactory";
 
     private enum ParamType {
         BOOLEAN(Boolean.class.getSimpleName()),
@@ -66,10 +71,8 @@ public class WorkItemNodeVisitor<T extends WorkItemNode> extends AbstractNodeVis
         }
     }
 
-    private final ClassLoader contextClassLoader;
-
     public WorkItemNodeVisitor(ClassLoader contextClassLoader) {
-        this.contextClassLoader = contextClassLoader;
+        super(contextClassLoader);
     }
 
     @Override
@@ -81,33 +84,40 @@ public class WorkItemNodeVisitor<T extends WorkItemNode> extends AbstractNodeVis
     public void visitNode(String factoryField, T node, BlockStmt body, VariableScope variableScope, ProcessMetaData metadata) {
         Work work = node.getWork();
         String workName = node.getWork().getName();
+        final String nodeId = getNodeId(node);
 
         if (TaskDescriptorBuilder.isBuilderSupported(workName)) {
             final TaskDescriptor taskDescriptor = new TaskDescriptorBuilder(workName)
                     .withProcessMetadata(metadata)
                     .withWorkItemNode(node)
-                    .withClassloader(contextClassLoader)
+                    .withClassloader(getClassLoader())
                     .build();
             workName = taskDescriptor.getName();
             metadata.getGeneratedHandlers().put(workName, taskDescriptor.generateHandlerClassForService());
         }
 
-        body.addStatement(getAssignedFactoryMethod(factoryField, WorkItemNodeFactory.class, getNodeId(node), getNodeKey(), new LongLiteralExpr(node.getId())))
+        body.addStatement(getAssignedFactoryMethod(factoryField, WorkItemNodeFactory.class, getNodeId(node), getNodeKey(), getWorkflowElementConstructor(node.getId())))
                 .addStatement(getNameMethod(node, work.getName()))
-                .addStatement(getFactoryMethod(getNodeId(node), METHOD_WORK_NAME, new StringLiteralExpr(workName)));
+                .addStatement(getFactoryMethod(nodeId, METHOD_WORK_NAME, new StringLiteralExpr(workName)));
 
-        addWorkItemParameters(work, body, getNodeId(node));
-        addNodeMappings(node, body, getNodeId(node));
+        if (work.getWorkParametersFactory() != null) {
+            body.addStatement(getFactoryMethod(nodeId, METHOD_WORK_PARAMETER_FACTORY, ExpressionUtils.getLiteralExpr(work.getWorkParametersFactory())));
+        }
 
-        body.addStatement(getDoneMethod(getNodeId(node)));
+        addWorkItemParameters(work, body, nodeId);
+        addNodeMappings(node, body, nodeId);
 
-        visitMetaData(node.getMetaData(), body, getNodeId(node));
+        body.addStatement(getDoneMethod(nodeId));
+
+        visitMetaData(node.getMetaData(), body, nodeId);
 
         metadata.getWorkItems().add(workName);
     }
 
     protected void addWorkItemParameters(Work work, BlockStmt body, String variableName) {
-        for (Entry<String, Object> entry : work.getParameters().entrySet()) {
+        // This is to ensure that each run of the generator produces the same code.
+        final List<Entry<String, Object>> sortedParameters = work.getParameters().entrySet().stream().sorted(Entry.comparingByKey()).toList();
+        for (Entry<String, Object> entry : sortedParameters) {
             if (entry.getValue() == null) {
                 continue; // interfaceImplementationRef ?
             }
@@ -125,12 +135,7 @@ public class WorkItemNodeVisitor<T extends WorkItemNode> extends AbstractNodeVis
         }
         ParamType pType = ParamType.fromString(type);
         if (pType == null) {
-            if (value instanceof Supplier) {
-                return ((Supplier<Expression>) value).get();
-            } else {
-                return new StringLiteralExpr(value.toString());
-            }
-
+            return ExpressionUtils.getLiteralExpr(value);
         }
         switch (pType) {
             case BOOLEAN:

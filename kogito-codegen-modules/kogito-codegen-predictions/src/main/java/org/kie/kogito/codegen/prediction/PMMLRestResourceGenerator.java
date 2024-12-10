@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.prediction;
 
@@ -65,8 +68,10 @@ public class PMMLRestResourceGenerator {
         this.context = context;
         this.kiePMMLModel = model;
         this.restPackageName = "org.kie.kogito." + CodegenStringUtil.escapeIdentifier(model.getClass().getPackage().getName());
-        String classPrefix = getSanitizedClassName(model.getName());
-        this.nameURL = URLEncoder.encode(classPrefix).replaceAll("\\+", "%20");
+        String filePrefix = URLEncoder.encode(getSanitizedClassName(model.getFileName().replace(".pmml", "")));
+        String classPrefix = URLEncoder.encode(getSanitizedClassName(model.getName()));
+        String fullPath = String.format("/%s/%s", filePrefix, classPrefix);
+        this.nameURL = fullPath.replaceAll("\\+", "%20");
         this.appCanonicalName = appCanonicalName;
         this.resourceClazzName = classPrefix + "Resource";
         this.relativePath = restPackageName.replace(".", "/") + "/" + resourceClazzName + ".java";
@@ -87,6 +92,7 @@ public class PMMLRestResourceGenerator {
         template.setName(resourceClazzName);
 
         setPathValue(template);
+        setPredictionFileName(template);
         setPredictionModelName(template);
         setOASAnnotations(template);
         if (context.hasDI()) {
@@ -119,6 +125,13 @@ public class PMMLRestResourceGenerator {
 
     void setPathValue(ClassOrInterfaceDeclaration template) {
         template.findFirst(SingleMemberAnnotationExpr.class).orElseThrow(() -> new RuntimeException("")).setMemberValue(new StringLiteralExpr(nameURL));
+    }
+
+    void setPredictionFileName(ClassOrInterfaceDeclaration template) {
+        template.getFieldByName("FILE_NAME")
+                .orElseThrow(() -> new RuntimeException("Missing FILE_NAME field"))
+                .getVariable(0)
+                .setInitializer(new StringLiteralExpr(kiePMMLModel.getFileName()));
     }
 
     void setPredictionModelName(ClassOrInterfaceDeclaration template) {

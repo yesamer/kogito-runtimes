@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.compiler.canonical;
 
@@ -22,12 +25,13 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.jbpm.process.core.context.variable.Variable;
 import org.kie.kogito.codegen.Generated;
 import org.kie.kogito.codegen.VariableInfo;
 import org.kie.kogito.internal.process.runtime.KogitoWorkflowProcess;
+import org.kie.kogito.internal.utils.KogitoTags;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.github.javaparser.ast.CompilationUnit;
@@ -58,8 +62,8 @@ import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 
 import static com.github.javaparser.StaticJavaParser.parse;
-import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
-import static org.drools.core.util.StringUtils.ucFirst;
+import static org.drools.util.StringUtils.ucFirst;
+import static org.kie.kogito.internal.utils.ConversionUtils.sanitizeClassName;
 
 public class ModelMetaData {
 
@@ -74,6 +78,9 @@ public class ModelMetaData {
     private Consumer<CompilationUnit>[] customGenerator;
 
     private boolean supportsValidation;
+    private boolean supportsOpenApiGeneration;
+
+    private String modelSchemaRef;
 
     public ModelMetaData(String processId, String packageName, String modelClassSimpleName, String visibility, VariableDeclarations variableScope, boolean hidden) {
         this(processId, packageName, modelClassSimpleName, visibility, variableScope, hidden, "/class-templates/ModelTemplate.java");
@@ -97,10 +104,14 @@ public class ModelMetaData {
         this.customGenerator = customGenerator;
     }
 
-    public String generate() {
+    public CompilationUnit generateUnit() {
         CompilationUnit modelClass = compilationUnit();
         Arrays.stream(customGenerator).forEach(generator -> generator.accept(modelClass));
-        return modelClass.toString();
+        return modelClass;
+    }
+
+    public String generate() {
+        return generateUnit().toString();
     }
 
     public AssignExpr newInstance(String assignVarName) {
@@ -142,6 +153,10 @@ public class ModelMetaData {
         return callSetter(targetVar, destField, new NameExpr(value));
     }
 
+    public MethodCallExpr callUpdateFromMap(String targetVar, String mapVar) {
+        return new MethodCallExpr(new NameExpr(targetVar), "update").addArgument(new NameExpr(mapVar));
+    }
+
     public MethodCallExpr callSetter(String targetVar, String destField, Expression value) {
         String name = variableScope.getTypes().get(destField).getSanitizedName();
         String type = variableScope.getType(destField);
@@ -158,7 +173,7 @@ public class ModelMetaData {
     }
 
     private CompilationUnit compilationUnit() {
-        CompilationUnit compilationUnit = parse(this.getClass().getResourceAsStream(templateName));
+        CompilationUnit compilationUnit = parse(TemplateHelper.findTemplate(templateName));
         compilationUnit.setPackageDeclaration(packageName);
         Optional<ClassOrInterfaceDeclaration> processMethod = compilationUnit.findFirst(ClassOrInterfaceDeclaration.class, sl1 -> true);
 
@@ -170,7 +185,7 @@ public class ModelMetaData {
         if (!KogitoWorkflowProcess.PRIVATE_VISIBILITY.equals(visibility)) {
             modelClass.addAnnotation(new NormalAnnotationExpr(new Name(Generated.class.getCanonicalName()), NodeList.nodeList(new MemberValuePair("value", new StringLiteralExpr("kogito-codegen")),
                     new MemberValuePair("reference", new StringLiteralExpr(processId)),
-                    new MemberValuePair("name", new StringLiteralExpr(ucFirst(ProcessToExecModelGenerator.extractProcessId(processId)))),
+                    new MemberValuePair("name", new StringLiteralExpr(sanitizeClassName(ProcessToExecModelGenerator.extractProcessId(processId)))),
                     new MemberValuePair("hidden", new BooleanLiteralExpr(hidden)))));
         }
         modelClass.setName(modelClassSimpleName);
@@ -201,33 +216,17 @@ public class ModelMetaData {
 
             List<String> tags = variable.getValue().getTags();
             fd.addAnnotation(new NormalAnnotationExpr(new Name(VariableInfo.class.getCanonicalName()),
-                    NodeList.nodeList(new MemberValuePair("tags", new StringLiteralExpr(tags.stream().collect(Collectors.joining(",")))))));
+                    NodeList.nodeList(new MemberValuePair("tags", new StringLiteralExpr(String.join(",", tags))))));
             fd.addAnnotation(new NormalAnnotationExpr(new Name(JsonProperty.class.getCanonicalName()),
                     NodeList.nodeList(new MemberValuePair("value",
                             new StringLiteralExpr(varName)))));
 
             applyValidation(fd, tags);
+            applyOpenApiSchemaAnnotation(fd);
 
             fd.createGetter();
             fd.createSetter();
 
-            // toMap method body
-            MethodCallExpr putVariable = new MethodCallExpr(new NameExpr("params"), "put");
-            putVariable.addArgument(new StringLiteralExpr(varName));
-            putVariable.addArgument(new FieldAccessExpr(new ThisExpr(), sanitizedName));
-            toMapBody.addStatement(putVariable);
-
-            ClassOrInterfaceType type = parseClassOrInterfaceType(vtype);
-
-            // from map instance method body
-            FieldAccessExpr instanceField = new FieldAccessExpr(new ThisExpr(), sanitizedName);
-            staticFromMap.addStatement(new AssignExpr(instanceField, new CastExpr(
-                    type,
-                    new MethodCallExpr(
-                            new NameExpr("params"),
-                            "get")
-                                    .addArgument(new StringLiteralExpr(varName))),
-                    AssignExpr.Operator.ASSIGN));
         }
 
         Optional<MethodDeclaration> toMapMethod = modelClass.findFirst(MethodDeclaration.class, sl -> sl.getName().asString().equals("toMap"));
@@ -235,30 +234,26 @@ public class ModelMetaData {
         toMapBody.addStatement(new ReturnStmt(new NameExpr("params")));
         toMapMethod.ifPresent(methodDeclaration -> methodDeclaration.setBody(toMapBody));
 
-        //first setting return type for the fromMap with no id parameter
-        modelClass.findFirst(MethodDeclaration.class, sl -> sl.getName().asString().equals("fromMap") && sl.getParameters().size() == 1)
-                .ifPresent(m -> m.setType(modelClassSimpleName));
-
-        //second setting return type for the fromMap with id parameter
-        modelClass.findFirst(
-                // make sure to take only the method with two parameters (id, businessKey and params)
-                MethodDeclaration.class, sl -> sl.getName().asString().equals("fromMap") && sl.getParameters().size() == 2)
-                .ifPresent(m -> {
-                    m.setBody(staticFromMap.addStatement(new ReturnStmt(new ThisExpr())));
-                    m.setType(modelClassSimpleName);
-                });
-
         return compilationUnit;
     }
 
     private void applyValidation(FieldDeclaration fd, List<String> tags) {
 
         if (supportsValidation) {
-            fd.addAnnotation("javax.validation.Valid");
+            fd.addAnnotation("jakarta.validation.Valid");
 
-            if (tags != null && tags.contains(Variable.REQUIRED_TAG)) {
-                fd.addAnnotation("javax.validation.constraints.NotNull");
+            if (tags != null && tags.contains(KogitoTags.REQUIRED_TAG)) {
+                fd.addAnnotation("jakarta.validation.constraints.NotNull");
             }
+        }
+    }
+
+    private void applyOpenApiSchemaAnnotation(final FieldDeclaration modelFieldDeclaration) {
+        if (this.supportsOpenApiGeneration && this.modelSchemaRef != null) {
+            final NormalAnnotationExpr schemaAnnotation = new NormalAnnotationExpr();
+            schemaAnnotation.setName(new Name(Schema.class.getCanonicalName()));
+            schemaAnnotation.addPair("ref", new StringLiteralExpr(this.modelSchemaRef));
+            modelFieldDeclaration.addAnnotation(schemaAnnotation);
         }
     }
 
@@ -278,16 +273,24 @@ public class ModelMetaData {
         return modelClassName;
     }
 
-    public String getGeneratedClassModel() {
-        return generate();
-    }
-
     public boolean isSupportsValidation() {
         return supportsValidation;
     }
 
     public void setSupportsValidation(boolean supportsValidation) {
         this.supportsValidation = supportsValidation;
+    }
+
+    public boolean isSupportsOpenApiGeneration() {
+        return supportsOpenApiGeneration;
+    }
+
+    public void setSupportsOpenApiGeneration(boolean supportsOpenApiGeneration) {
+        this.supportsOpenApiGeneration = supportsOpenApiGeneration;
+    }
+
+    public void setModelSchemaRef(String modelSchemaRef) {
+        this.modelSchemaRef = modelSchemaRef;
     }
 
     @Override

@@ -1,3 +1,22 @@
+<!--
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+  -->
+
 # Contribution guide
 
 **Want to contribute? Great!** 
@@ -14,13 +33,13 @@ modified, such other license.
 
 ## Issues
 
-Kogito uses [JIRA to manage and report issues](https://issues.redhat.com/projects/KOGITO/).
+Kogito uses [Issues](https://github.com/apache/incubator-kie-kogito-runtimes/issues).
 
 If you believe you found a bug, please indicate a way to reproduce it, what you are seeing and what you would expect to see. Don't forget to indicate your Kogito, Java, Maven, Quarkus/Spring, GraalVM version. 
 
-### Checking an issue is fixed in master
+### Checking an issue is fixed in main
 
-Sometimes a bug has been fixed in the `master` branch of Kogito and you want to confirm it is fixed for your own application. Testing the `master` branch is easy and you have two options:
+Sometimes a bug has been fixed in the `main` branch of Kogito and you want to confirm it is fixed for your own application. Testing the `main` branch is easy and you have two options:
 
 * either use the snapshots we publish daily on https://repository.jboss.org/nexus/content/repositories/snapshots/
 * or build Kogito all by yourself
@@ -31,18 +50,18 @@ If you are interested in having more details, refer to the [Build section](#buil
 
 To contribute, use GitHub Pull Requests, from your **own** fork. 
 
-- PRs should be always related to an open JIRA issue. If there is none, you should create one.
+- PRs should be always related to an open an [issue](https://github.com/apache/incubator-kie-kogito-runtimes/issues). If there is none, you should [create one](https://github.com/apache/incubator-kie-kogito-runtimes/issues/new) by describing what problem you see that we need to fix.
 - Try to fix only one issue per PR.
-- Make sure to create a new branch. Usually branches are named after the JIRA ticket they are addressing. E.g. for ticket "KOGITO-XYZ An example issue" your branch should be at least prefixed with `KOGITO-XYZ`. E.g.:
+- Make sure to create a new branch. Usually branches are named after the github issue they are addressing. E.g. for ticket "Fix_#issue An example issue". E.g.:
 
-        git checkout -b KOGITO-XYZ
+        git checkout -b Fix_#XYZ
         # or
-        git checkout -b KOGITO-XYZ-my-fix
+        git checkout -b Fix_#XYZ-my-fix
 
-- When you submit your PR, make sure to include the ticket ID, and its title; e.g., "KOGITO-XYZ An example issue".
-- The description of your PR should describe the code you wrote. The issue that is solved should be at least described properly in the corresponding JIRA ticket. 
+- When you submit your PR, make sure to include the ticket ID, and its title; e.g., "Fix_#XYZ An example issue".
+- The description of your PR should describe the code you wrote. The issue that is solved should be at least described properly in the corresponding github issue. 
 - If your contribution spans across multiple repositories, 
-  use the same branch name (e.g. `KOGITO-XYZ`) in each PR so that our CI (Jenkins) can build them all at once.
+  use the same branch name (e.g. `Fix_#XYZ`) in each PR so that our CI (Jenkins) can build them all at once.
 - If your contribution spans across multiple repositories, make sure to list all the related PRs.
 
 ### Java Coding Guidelines
@@ -54,7 +73,7 @@ Copyright headers format is enforced during build time. In order to automaticall
 mvn com.mycila:license-maven-plugin:format
 ```
 
-Make sure you have configured your IDE according to the [project codestyle](https://github.com/kiegroup/kogito-runtimes/tree/master/kogito-build/kogito-ide-config).
+Make sure you have configured your IDE according to the [project codestyle](https://github.com/kiegroup/kogito-runtimes/tree/main/kogito-build/kogito-ide-config).
 
 ### Requirements for Dependencies
 
@@ -95,7 +114,7 @@ Any dependency used in any KIE project must fulfill these hard requirements:
       Maven or Gradle are acceptable as build systems.
 
 Any dependency used in any KOGITO projects should fulfill these soft requirements:
-- **Edit dependencies** in **[kogito-build-parent](https://github.com/kiegroup/kogito-runtimes/blob/master/kogito-build/kogito-build-parent/pom.xml)**.
+- **Edit dependencies** in **[kogito-build-parent](https://github.com/kiegroup/kogito-runtimes/blob/main/kogito-build/kogito-build-parent/pom.xml)**.
     - Dependencies in subprojects should avoid overwriting the dependency versions of kogito-build-parent if there is no special case or need for that.
 
 - Only use dependencies with **an active community**.
@@ -116,8 +135,10 @@ If you want to add a dependency that violates any of the rules above, get approv
 
 ### Tests and Documentation 
 
-Don't forget to include tests in your pull requests, and documentation (reference documentation, javadoc...). Guides and reference documentation should be submitted to the [Kogito Docs Repository](https://github.com/kiegroup/kie-docs/tree/master-kogito).
+Don't forget to include tests in your pull requests, and documentation (reference documentation, javadoc...). Guides and reference documentation should be submitted to the [Kogito Docs Repository](https://github.com/kiegroup/kie-docs/tree/main-kogito).
 If you are contributing a new feature, we strongly advise submitting an [Example](https://github.com/kiegroup/kogito-examples). 
+
+- For Quarkus tests, basically use `@QuarkusTest` as unit tests for surefire-plugin and `@QuarkusIntegrationTest` as integration tests (`*IT.java`) for failsafe-plugin. Static http resources generated by `kogito-codegen` (`META-INF/resources/`) are available with `@QuarkusIntegrationTest`. If you need to access static http resources in `@QuarkusTest`, add `quarkus-undertow` dependency with `test` scope. Also note that you cannot mix `@QuarkusTest` and `@QuarkusIntegrationTest` in the same `integration-test` phase.
 
 ### Code Reviews and Continuous Integration
 
@@ -136,6 +157,7 @@ If you have not done so on this machine, you need to:
 * Install Git and configure your GitHub access
 * Install Java SDK (OpenJDK recommended)
 * For Native Image, follow Quarkus instructions at [GraalVM](https://quarkus.io/guides/building-native-image)
+* On MAC, check [Setup MAC for Native image build](./Develop_on_Mac.md) for further instructions.
 
 Docker is not strictly necessary, but it is a required to run some of the integration tests. 
 These tests can be skipped (see the [Build](#build) section), but we recommend to install it to run these tests locally.

@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.impl;
 
@@ -24,14 +27,17 @@ import java.util.Map;
 import org.drools.core.common.InternalKnowledgeRuntime;
 import org.jbpm.process.core.Context;
 import org.jbpm.process.core.ContextContainer;
+import org.jbpm.process.core.context.exception.CompensationScope;
 import org.jbpm.process.core.impl.XmlProcessDumper;
 import org.jbpm.process.core.impl.XmlProcessDumperFactory;
 import org.jbpm.process.instance.ContextInstance;
 import org.jbpm.process.instance.InternalProcessRuntime;
 import org.jbpm.process.instance.ProcessInstance;
+import org.jbpm.ruleflow.core.Metadata;
 import org.jbpm.workflow.core.WorkflowProcess;
 import org.kie.api.definition.process.Process;
 import org.kie.api.runtime.rule.Agenda;
+import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 
 /**
  * Default implementation of a process instance.
@@ -46,29 +52,31 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
     private transient Process process;
     private String processXml;
     private int state = STATE_PENDING;
-    private Map<String, ContextInstance> contextInstances = new HashMap<String, ContextInstance>();
-    private Map<String, List<ContextInstance>> subContextInstances = new HashMap<String, List<ContextInstance>>();
+    private Map<String, ContextInstance> contextInstances = new HashMap<>();
+    private Map<String, List<ContextInstance>> subContextInstances = new HashMap<>();
     private transient InternalKnowledgeRuntime kruntime;
-    private Map<String, Object> metaData = new HashMap<String, Object>();
+    private Map<String, Object> metaData = new HashMap<>();
     private String outcome;
     private String parentProcessInstanceId;
     private String rootProcessInstanceId;
     private String description;
     private String rootProcessId;
 
-    /**
-     * @Deprecated use getStringId instead.
-     * @throws UnsupportedOperationException if called
-     */
-    @Deprecated
-    public long getId() {
-        throw new UnsupportedOperationException();
+    private Map<String, List<String>> headers;
+
+    private String processVersion;
+
+    @Override
+    public String getId() {
+        return this.id;
     }
 
+    @Override
     public String getStringId() {
         return this.id;
     }
 
+    @Override
     public void setId(final String id) {
         this.id = id;
     }
@@ -89,6 +97,7 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         }
     }
 
+    @Override
     public Process getProcess() {
         if (this.process == null) {
             if (processXml == null) {
@@ -104,11 +113,27 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         return this.process;
     }
 
+    @Override
     public void setProcess(final Process process) {
         this.processId = process.getId();
+        this.processVersion = process.getVersion();
         this.process = process;
     }
 
+    public void setInternalProcess(Process process) {
+        this.process = process;
+    }
+
+    @Override
+    public String getProcessVersion() {
+        return processVersion;
+    }
+
+    public void setProcessVersion(String processVersion) {
+        this.processVersion = processVersion;
+    }
+
+    @Override
     public String getProcessId() {
         return processId;
     }
@@ -117,17 +142,26 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         this.processId = processId;
     }
 
+    @Override
     public String getProcessName() {
         return getProcess().getName();
     }
 
+    @Override
     public void setState(final int state, String outcome) {
         this.outcome = outcome;
         internalSetState(state);
     }
 
     public void internalSetState(final int state) {
+        if (state == KogitoProcessInstance.STATE_ABORTED && automaticCompensation()) {
+            signalEvent(Metadata.COMPENSATION, CompensationScope.IMPLICIT_COMPENSATION_PREFIX + process.getId());
+        }
         this.state = state;
+    }
+
+    private boolean automaticCompensation() {
+        return process.getMetaData().containsKey(Metadata.COMPENSATE_WHEN_ABORTED);
     }
 
     @Override
@@ -135,14 +169,17 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         return this.state;
     }
 
+    @Override
     public void setState(final int state) {
         internalSetState(state);
     }
 
+    @Override
     public InternalKnowledgeRuntime getKnowledgeRuntime() {
         return this.kruntime;
     }
 
+    @Override
     public void setKnowledgeRuntime(final InternalKnowledgeRuntime kruntime) {
         if (this.kruntime != null) {
             throw new IllegalArgumentException("Runtime can only be set once.");
@@ -157,6 +194,7 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         return getKnowledgeRuntime().getAgenda();
     }
 
+    @Override
     public ContextContainer getContextContainer() {
         return (ContextContainer) getProcess();
     }
@@ -165,6 +203,7 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         this.contextInstances.put(contextId, contextInstance);
     }
 
+    @Override
     public ContextInstance getContextInstance(String contextId) {
         ContextInstance contextInstance = this.contextInstances.get(contextId);
         if (contextInstance != null) {
@@ -178,10 +217,12 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         return null;
     }
 
+    @Override
     public List<ContextInstance> getContextInstances(String contextId) {
         return this.subContextInstances.get(contextId);
     }
 
+    @Override
     public void addContextInstance(String contextId, ContextInstance contextInstance) {
         List<ContextInstance> list = this.subContextInstances.get(contextId);
         if (list == null) {
@@ -191,6 +232,7 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         list.add(contextInstance);
     }
 
+    @Override
     public void removeContextInstance(String contextId, ContextInstance contextInstance) {
         List<ContextInstance> list = this.subContextInstances.get(contextId);
         if (list != null) {
@@ -198,6 +240,7 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         }
     }
 
+    @Override
     public ContextInstance getContextInstance(String contextId, long id) {
         List<ContextInstance> contextInstances = subContextInstances.get(contextId);
         if (contextInstances != null) {
@@ -210,18 +253,20 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         return null;
     }
 
+    @Override
     public ContextInstance getContextInstance(final Context context) {
         ContextInstanceFactory conf = ContextInstanceFactoryRegistry.INSTANCE.getContextInstanceFactory(context);
         if (conf == null) {
             throw new IllegalArgumentException("Illegal context type (registry not found): " + context.getClass());
         }
-        ContextInstance contextInstance = (ContextInstance) conf.getContextInstance(context, this, this);
+        ContextInstance contextInstance = conf.getContextInstance(context, this, this);
         if (contextInstance == null) {
             throw new IllegalArgumentException("Illegal context type (instance not found): " + context.getClass());
         }
         return contextInstance;
     }
 
+    @Override
     public void signalEvent(String type, Object event) {
     }
 
@@ -233,10 +278,10 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
     @Override
     public void start(String trigger) {
         synchronized (this) {
-            if (getState() != ProcessInstanceImpl.STATE_PENDING) {
+            if (getState() != KogitoProcessInstance.STATE_PENDING) {
                 throw new IllegalArgumentException("A process instance can only be started once");
             }
-            setState(ProcessInstanceImpl.STATE_ACTIVE);
+            setState(KogitoProcessInstance.STATE_ACTIVE);
             internalStart(trigger);
         }
     }
@@ -256,9 +301,10 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
 
     @Override
     public String[] getEventTypes() {
-        return null;
+        return new String[0];
     }
 
+    @Override
     public String toString() {
         final StringBuilder b = new StringBuilder("ProcessInstance ");
         b.append(getStringId());
@@ -289,17 +335,8 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         this.outcome = outcome;
     }
 
-    /**
-     * @Deprecated use getParentProcessInstanceStringId instead.
-     * @throws UnsupportedOperationException if called
-     */
     @Override
-    public long getParentProcessInstanceId() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public String getParentProcessInstanceStringId() {
+    public String getParentProcessInstanceId() {
         return parentProcessInstanceId;
     }
 
@@ -328,6 +365,7 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
         this.rootProcessId = rootProcessId;
     }
 
+    @Override
     public String getDescription() {
         if (description == null) {
             description = process.getName();
@@ -344,5 +382,14 @@ public abstract class ProcessInstanceImpl implements ProcessInstance,
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    @Override
+    public Map<String, List<String>> getHeaders() {
+        return headers;
+    }
+
+    public void setHeaders(Map<String, List<String>> headers) {
+        this.headers = headers;
     }
 }

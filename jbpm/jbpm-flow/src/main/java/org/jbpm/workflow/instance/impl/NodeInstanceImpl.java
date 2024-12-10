@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.instance.impl;
 
@@ -23,23 +26,27 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.function.Function;
+import java.util.regex.Matcher;
 
 import org.drools.core.common.InternalKnowledgeRuntime;
-import org.drools.core.spi.KogitoProcessContextImpl;
 import org.jbpm.process.core.Context;
 import org.jbpm.process.core.ContextContainer;
 import org.jbpm.process.core.context.exception.ExceptionScope;
 import org.jbpm.process.core.context.exclusive.ExclusiveGroup;
+import org.jbpm.process.core.context.variable.Variable;
 import org.jbpm.process.core.context.variable.VariableScope;
 import org.jbpm.process.instance.ContextInstance;
 import org.jbpm.process.instance.ContextInstanceContainer;
 import org.jbpm.process.instance.InternalProcessRuntime;
-import org.jbpm.process.instance.ProcessInstance;
 import org.jbpm.process.instance.context.exception.ExceptionScopeInstance;
 import org.jbpm.process.instance.context.exclusive.ExclusiveGroupInstance;
 import org.jbpm.process.instance.context.variable.VariableScopeInstance;
 import org.jbpm.process.instance.impl.Action;
 import org.jbpm.process.instance.impl.ConstraintEvaluator;
+import org.jbpm.util.ContextFactory;
+import org.jbpm.util.PatternConstants;
+import org.jbpm.workflow.core.Constraint;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.impl.NodeImpl;
 import org.jbpm.workflow.instance.WorkflowProcessInstance;
@@ -47,17 +54,22 @@ import org.jbpm.workflow.instance.WorkflowRuntimeException;
 import org.jbpm.workflow.instance.node.ActionNodeInstance;
 import org.jbpm.workflow.instance.node.CompositeNodeInstance;
 import org.kie.api.definition.process.Connection;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
 import org.kie.api.runtime.process.NodeInstanceContainer;
 import org.kie.kogito.internal.process.runtime.KogitoNode;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstanceContainer;
+import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
+import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
+import org.kie.kogito.process.ProcessInstanceExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.jbpm.ruleflow.core.Metadata.HIDDEN;
 import static org.jbpm.ruleflow.core.Metadata.INCOMING_CONNECTION;
 import static org.jbpm.ruleflow.core.Metadata.OUTGOING_CONNECTION;
-import static org.jbpm.ruleflow.core.Metadata.UNIQUE_ID;
+import static org.jbpm.workflow.instance.WorkflowProcessParameters.WORKFLOW_PARAM_MULTIPLE_CONNECTIONS;
+import static org.jbpm.workflow.instance.WorkflowProcessParameters.WORKFLOW_PARAM_TRANSACTIONS;
 import static org.kie.kogito.internal.process.runtime.KogitoProcessInstance.STATE_ACTIVE;
 
 /**
@@ -70,17 +82,19 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
     protected static final Logger logger = LoggerFactory.getLogger(NodeInstanceImpl.class);
 
     private String id;
-    private long nodeId;
+    private WorkflowElementIdentifier nodeId;
     private WorkflowProcessInstance processInstance;
     private org.jbpm.workflow.instance.NodeInstanceContainer nodeInstanceContainer;
     private Map<String, Object> metaData = new HashMap<>();
     private int level;
 
-    protected int slaCompliance = ProcessInstance.SLA_NA;
+    protected int slaCompliance = KogitoProcessInstance.SLA_NA;
     protected Date slaDueDate;
     protected String slaTimerId;
     protected Date triggerTime;
     protected Date leaveTime;
+
+    protected transient CancelType cancelType;
 
     protected transient Map<String, Object> dynamicParameters;
 
@@ -88,31 +102,37 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         this.id = id;
     }
 
-    public long getId() {
-        throw new UnsupportedOperationException();
+    @Override
+    public String getId() {
+        return this.id;
     }
 
+    @Override
     public String getStringId() {
         return this.id;
     }
 
-    public void setNodeId(final long nodeId) {
+    public void setNodeId(WorkflowElementIdentifier nodeId) {
         this.nodeId = nodeId;
     }
 
-    public long getNodeId() {
+    @Override
+    public WorkflowElementIdentifier getNodeId() {
         return this.nodeId;
     }
 
+    @Override
     public String getNodeName() {
         org.kie.api.definition.process.Node node = getNode();
         return node == null ? "" : node.getName();
     }
 
+    @Override
     public String getNodeDefinitionId() {
-        return (String) getNode().getMetaData().get(UNIQUE_ID);
+        return getNode().getUniqueId();
     }
 
+    @Override
     public int getLevel() {
         return this.level;
     }
@@ -125,10 +145,12 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         this.processInstance = processInstance;
     }
 
+    @Override
     public WorkflowProcessInstance getProcessInstance() {
         return this.processInstance;
     }
 
+    @Override
     public KogitoNodeInstanceContainer getNodeInstanceContainer() {
         return this.nodeInstanceContainer;
     }
@@ -140,7 +162,11 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         }
     }
 
+    @Override
     public org.kie.api.definition.process.Node getNode() {
+        if (nodeId == null) {
+            return null;
+        }
         try {
             return ((org.jbpm.workflow.core.NodeContainer) this.nodeInstanceContainer.getNodeContainer()).internalGetNode(this.nodeId);
         } catch (IllegalArgumentException e) {
@@ -156,7 +182,23 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         return false;
     }
 
-    public void cancel() {
+    @Override
+    public CancelType getCancelType() {
+        return cancelType;
+    }
+
+    public final void cancel() {
+        cancel(CancelType.ABORTED);
+    }
+
+    @Override
+    public void cancel(CancelType cancelType) {
+        this.cancelType = cancelType;
+
+        if (triggerTime == null) {
+            triggerTime = new Date();
+        }
+
         leaveTime = new Date();
         boolean hidden = false;
         org.kie.api.definition.process.Node node = getNode();
@@ -176,6 +218,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         }
     }
 
+    @Override
     public final void trigger(KogitoNodeInstance from, String type) {
         boolean hidden = false;
         if (getNode().getMetaData().get(HIDDEN) != null) {
@@ -187,8 +230,8 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
             ((org.jbpm.workflow.instance.NodeInstanceContainer) getNodeInstanceContainer()).setCurrentLevel(level);
             Collection<Connection> incoming = getNode().getIncomingConnections(type);
             for (Connection conn : incoming) {
-                if (conn.getFrom().getId() == from.getNodeId()) {
-                    this.metaData.put(INCOMING_CONNECTION, conn.getMetaData().get(UNIQUE_ID));
+                if (conn.getFrom().getId().equals(from.getNodeId())) {
+                    this.metaData.put(INCOMING_CONNECTION, conn.getUniqueId());
                     break;
                 }
             }
@@ -208,9 +251,15 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         try {
             internalTrigger(from, type);
         } catch (Exception e) {
-            captureError(e);
+            if (!WORKFLOW_PARAM_TRANSACTIONS.get(getProcessInstance().getProcess())) {
+                logger.error("Node instance causing process instance error in id {} in a non transactional environment", this.getStringId());
+                captureError(e);
+                return;
+            } else {
+                logger.error("Node instance causing process instance error in id {} in a transactional environment (Wrapping)", this.getStringId());
+                throw new ProcessInstanceExecutionException(this.getProcessInstance().getId(), this.getNodeDefinitionId(), e.getMessage(), e);
+            }
             // stop after capturing error
-            return;
         }
         if (!hidden) {
             ((InternalProcessRuntime) kruntime.getProcessRuntime())
@@ -231,28 +280,29 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
      * 
      * @param action An {@link Action} instance.
      */
-    protected void executeAction(Action action) {
-        KogitoProcessContextImpl context = new KogitoProcessContextImpl(getProcessInstance().getKnowledgeRuntime());
-        context.setNodeInstance(this);
+    protected void executeAction(Action action, KogitoProcessContext context) {
         try {
             action.execute(context);
         } catch (Exception e) {
-            String exceptionName = e.getClass().getName();
-            ExceptionScopeInstance exceptionScopeInstance = (ExceptionScopeInstance) resolveContextInstance(ExceptionScope.EXCEPTION_SCOPE, exceptionName);
+            ExceptionScopeInstance exceptionScopeInstance = (ExceptionScopeInstance) resolveContextInstance(ExceptionScope.EXCEPTION_SCOPE, e);
             if (exceptionScopeInstance == null) {
                 throw new WorkflowRuntimeException(this, getProcessInstance(), "Unable to execute Action: " + e.getMessage(), e);
             }
-
-            exceptionScopeInstance.handleException(exceptionName, e);
-            cancel();
+            context.getContextData().put("Exception", e);
+            exceptionScopeInstance.handleException(e, context);
+            cancel(CancelType.ERROR);
         }
+    }
+
+    protected void executeAction(Action action) {
+        executeAction(action, ContextFactory.fromNode(this));
     }
 
     public void triggerCompleted(String type, boolean remove) {
         leaveTime = new Date();
         org.kie.api.definition.process.Node node = getNode();
         if (node != null) {
-            String uniqueId = (String) node.getMetaData().get(UNIQUE_ID);
+            String uniqueId = node.getUniqueId();
             if (uniqueId == null) {
                 uniqueId = ((NodeImpl) node).getUniqueId();
             }
@@ -273,7 +323,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
 
         List<Connection> connections = null;
         if (node != null) {
-            if ("true".equals(System.getProperty("jbpm.enable.multi.con")) && ((NodeImpl) node).getConstraints().size() > 0) {
+            if (WORKFLOW_PARAM_MULTIPLE_CONNECTIONS.get(getProcessInstance().getProcess()) && !((NodeImpl) node).getConstraints().isEmpty()) {
                 int priority;
                 connections = ((NodeImpl) node).getDefaultOutgoingConnections();
                 boolean found = false;
@@ -285,13 +335,17 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
                     Connection selectedConnection = null;
                     ConstraintEvaluator selectedConstraint = null;
                     for (final Connection connection : outgoingCopy) {
-                        ConstraintEvaluator constraint = (ConstraintEvaluator) ((NodeImpl) node).getConstraint(connection);
-                        if (constraint != null
-                                && constraint.getPriority() < priority
-                                && !constraint.isDefault()) {
-                            priority = constraint.getPriority();
-                            selectedConnection = connection;
-                            selectedConstraint = constraint;
+                        Collection<Constraint> constraints = ((NodeImpl) node).getConstraints(connection);
+                        if (constraints != null) {
+                            for (Constraint constraint : constraints) {
+                                if (constraint instanceof ConstraintEvaluator && constraint.getPriority() < priority
+                                        && !constraint.isDefault()) {
+                                    priority = constraint.getPriority();
+                                    selectedConnection = connection;
+                                    selectedConstraint = (ConstraintEvaluator) constraint;
+                                }
+
+                            }
                         }
                     }
                     if (selectedConstraint == null) {
@@ -314,10 +368,17 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
                 }
                 if (!found) {
                     for (final Connection connection : connections) {
-                        ConstraintEvaluator constraint = (ConstraintEvaluator) ((NodeImpl) node).getConstraint(connection);
-                        if (constraint.isDefault()) {
-                            triggerConnection(connection);
-                            found = true;
+                        Collection<Constraint> constraints = ((NodeImpl) node).getConstraints(connection);
+                        if (constraints != null) {
+                            for (Constraint constraint : constraints) {
+                                if (constraint.isDefault()) {
+                                    triggerConnection(connection);
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (found) {
                             break;
                         }
                     }
@@ -374,7 +435,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
                     if (groupInstance.containsNodeInstance(this)) {
                         for (KogitoNodeInstance nodeInstance : groupInstance.getNodeInstances()) {
                             if (nodeInstance != this) {
-                                ((org.jbpm.workflow.instance.NodeInstance) nodeInstance).cancel();
+                                ((org.jbpm.workflow.instance.NodeInstance) nodeInstance).cancel(CancelType.OBSOLETE);
                             }
                         }
                         ((ContextInstanceContainer) parent).removeContextInstance(ExclusiveGroup.EXCLUSIVE_GROUP, contextInstance);
@@ -406,8 +467,8 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         nodeInstance.trigger(this, type);
         Collection<Connection> outgoing = getNode().getOutgoingConnections(type);
         for (Connection conn : outgoing) {
-            if (conn.getTo().getId() == nodeInstance.getNodeId()) {
-                this.metaData.put(OUTGOING_CONNECTION, conn.getMetaData().get(UNIQUE_ID));
+            if (conn.getTo().getId().equals(nodeInstance.getNodeId())) {
+                this.metaData.put(OUTGOING_CONNECTION, conn.getUniqueId());
                 break;
             }
         }
@@ -428,11 +489,11 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         triggerNode(getNodeId(), !remove);
     }
 
-    public void triggerNode(long nodeId) {
+    public void triggerNode(WorkflowElementIdentifier nodeId) {
         triggerNode(nodeId, true);
     }
 
-    public void triggerNode(long nodeId, boolean fireEvents) {
+    public void triggerNode(WorkflowElementIdentifier nodeId, boolean fireEvents) {
         org.jbpm.workflow.instance.NodeInstance nodeInstance = ((org.jbpm.workflow.instance.NodeInstanceContainer) getNodeInstanceContainer())
                 .getNodeInstance(((KogitoNode) getNode()).getParentContainer().getNode(nodeId));
         triggerNodeInstance(nodeInstance, Node.CONNECTION_DEFAULT_TYPE, fireEvents);
@@ -445,6 +506,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         return ((NodeImpl) getNode()).resolveContext(contextId, param);
     }
 
+    @Override
     public ContextInstance resolveContextInstance(String contextId, Object param) {
         Context context = resolveContext(contextId, param);
         if (context == null) {
@@ -489,6 +551,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         }
     }
 
+    @Override
     public Object getVariable(String variableName) {
         VariableScopeInstance variableScope = (VariableScopeInstance) resolveContextInstance(VariableScope.VARIABLE_SCOPE, variableName);
         if (variableScope == null) {
@@ -497,6 +560,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         return variableScope.getVariable(variableName);
     }
 
+    @Override
     public void setVariable(String variableName, Object value) {
         VariableScopeInstance variableScope = (VariableScopeInstance) resolveContextInstance(VariableScope.VARIABLE_SCOPE, variableName);
         if (variableScope == null) {
@@ -514,16 +578,17 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
     }
 
     public String getUniqueId() {
-        String result = "" + getStringId();
+        StringBuilder result = new StringBuilder("" + getStringId());
         NodeInstanceContainer parent = getNodeInstanceContainer();
         while (parent instanceof CompositeNodeInstance) {
             CompositeNodeInstance nodeInstance = (CompositeNodeInstance) parent;
-            result = nodeInstance.getStringId() + ":" + result;
+            result.insert(0, nodeInstance.getStringId() + ":");
             parent = nodeInstance.getNodeInstanceContainer();
         }
-        return result;
+        return result.toString();
     }
 
+    @Override
     public Map<String, Object> getMetaData() {
         return this.metaData;
     }
@@ -554,6 +619,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         }
     }
 
+    @Override
     public void setDynamicParameters(Map<String, Object> dynamicParameters) {
         this.dynamicParameters = dynamicParameters;
     }
@@ -562,6 +628,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
 
     }
 
+    @Override
     public int getSlaCompliance() {
         return slaCompliance;
     }
@@ -570,6 +637,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         this.slaCompliance = slaCompliance;
     }
 
+    @Override
     public Date getSlaDueDate() {
         return slaDueDate;
     }
@@ -578,6 +646,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         this.slaDueDate = slaDueDate;
     }
 
+    @Override
     public String getSlaTimerId() {
         return slaTimerId;
     }
@@ -586,6 +655,7 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         this.slaTimerId = slaTimerId;
     }
 
+    @Override
     public Date getTriggerTime() {
         return triggerTime;
     }
@@ -594,7 +664,83 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
         this.triggerTime = triggerTime;
     }
 
+    @Override
     public Date getLeaveTime() {
         return leaveTime;
+    }
+
+    protected Object resolveValue(Object value) {
+        return (value instanceof String) ? resolveExpression((String) value) : value;
+    }
+
+    protected boolean isExpression(String expression) {
+        return expression != null && PatternConstants.PARAMETER_MATCHER.matcher(expression).find();
+    }
+
+    public String resolveExpression(String expression) {
+        return isExpression(expression) ? (String) resolveValue(expression) : expression;
+    }
+
+    protected Object resolveValue(String expression) {
+        return resolveValue(expression, (replacements) -> {
+            String expr = expression;
+            for (Map.Entry<String, Object> replacement : replacements.entrySet()) {
+                expr = expr.replace("#{" + replacement.getKey() + "}", replacement.getValue() != null ? replacement.getValue().toString() : "");
+            }
+            return expr;
+        });
+    }
+
+    // resolve expression based on variables or mvel expressions
+    protected Object resolveValue(String expression, Function<Map<String, Object>, Object> converter) {
+        if (expression == null) {
+            return null;
+        }
+        Object outcome = null;
+        // cannot parse delay, trying to interpret it
+        Map<String, Object> replacements = new HashMap<>();
+        Matcher matcher = PatternConstants.PARAMETER_MATCHER.matcher(expression);
+        if (matcher.find()) {
+            matcher.reset();
+            while (matcher.find()) {
+                String paramName = matcher.group(1);
+                if (replacements.get(paramName) == null) {
+                    VariableScopeInstance variableScopeInstance = (VariableScopeInstance) resolveContextInstance(VariableScope.VARIABLE_SCOPE, paramName);
+                    if (variableScopeInstance != null) {
+                        Object variableValue = variableScopeInstance.getVariable(paramName);
+                        replacements.put(paramName, variableValue);
+                    } else {
+                        try {
+                            Object variableValue = MVELProcessHelper.evaluator().eval(paramName, new NodeInstanceResolverFactory(this));
+                            replacements.put(paramName, variableValue);
+                        } catch (Exception t) {
+                            logger.error("MVEL failed to replace variable {} in process {} for node {}. Continuing without setting process id", paramName, processInstance.getProcessId(),
+                                    getNodeName(), t);
+                        }
+                    }
+                }
+            }
+            outcome = converter.apply(replacements);
+        } else if (getVariable(expression) != null) {
+            outcome = getVariable(expression);
+        } else {
+            outcome = expression;
+        }
+        return outcome;
+    }
+
+    protected void mapDynamicOutputData(Map<String, Object> results) {
+        if (results != null && !results.isEmpty()) {
+            VariableScope variableScope = (VariableScope) ((ContextContainer) getProcessInstance().getProcess()).getDefaultContext(VariableScope.VARIABLE_SCOPE);
+            VariableScopeInstance variableScopeInstance = (VariableScopeInstance) getProcessInstance().getContextInstance(VariableScope.VARIABLE_SCOPE);
+            for (Entry<String, Object> result : results.entrySet()) {
+                String variableName = result.getKey();
+                Variable variable = variableScope.findVariable(variableName);
+                if (variable != null) {
+                    variableScopeInstance.getVariableScope().validateVariable(getProcessInstance().getProcessName(), variableName, result.getValue());
+                    variableScopeInstance.setVariable(this, variableName, result.getValue());
+                }
+            }
+        }
     }
 }

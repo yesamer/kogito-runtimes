@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.bpmn2.xml;
 
@@ -19,54 +22,56 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.drools.compiler.compiler.xml.XmlDumper;
-import org.drools.core.xml.ExtensibleXmlParser;
 import org.jbpm.bpmn2.core.Error;
 import org.jbpm.bpmn2.core.Escalation;
 import org.jbpm.bpmn2.core.ItemDefinition;
 import org.jbpm.bpmn2.core.Message;
+import org.jbpm.compiler.xml.Parser;
 import org.jbpm.compiler.xml.ProcessBuildData;
+import org.jbpm.compiler.xml.compiler.XmlDumper;
+import org.jbpm.compiler.xml.core.ExtensibleXmlParser;
 import org.jbpm.process.core.event.EventFilter;
-import org.jbpm.process.core.event.EventTransformerImpl;
 import org.jbpm.process.core.event.EventTypeFilter;
 import org.jbpm.process.core.event.NonAcceptingEventTypeFilter;
-import org.jbpm.process.core.impl.DataTransformerRegistry;
 import org.jbpm.ruleflow.core.RuleFlowProcess;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.NodeContainer;
 import org.jbpm.workflow.core.node.BoundaryEventNode;
 import org.jbpm.workflow.core.node.EventNode;
-import org.jbpm.workflow.core.node.Transformation;
-import org.kie.api.runtime.process.DataTransformer;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.Attributes;
 import org.xml.sax.SAXException;
 
-public class BoundaryEventHandler extends AbstractNodeHandler {
+import static org.jbpm.ruleflow.core.Metadata.EVENT_TYPE;
+import static org.jbpm.ruleflow.core.Metadata.MESSAGE_REF;
 
-    private DataTransformerRegistry transformerRegistry = DataTransformerRegistry.get();
+public class BoundaryEventHandler extends AbstractNodeHandler {
 
     protected Node createNode(Attributes attrs) {
         return new BoundaryEventNode();
     }
 
-    @SuppressWarnings("unchecked")
-    public Class generateNodeFor() {
+    public Class<BoundaryEventNode> generateNodeFor() {
         return BoundaryEventNode.class;
     }
 
+    @Override
     public Object end(final String uri, final String localName,
-            final ExtensibleXmlParser parser) throws SAXException {
+            final Parser parser) throws SAXException {
         final Element element = parser.endElementBuilder();
-        Node node = (Node) parser.getCurrent();
+        BoundaryEventNode node = (BoundaryEventNode) parser.getCurrent();
         String attachedTo = element.getAttribute("attachedToRef");
         Attr cancelActivityAttr = element.getAttributeNode("cancelActivity");
         boolean cancelActivity = true;
         if (cancelActivityAttr != null) {
             cancelActivity = Boolean.parseBoolean(cancelActivityAttr.getValue());
         }
+
+        // this only generated boundaryEventNode so we set the variable name if exists
+        node.setIoSpecification(readCatchSpecification(parser, element));
+        setCatchVariable(node.getIoSpecification(), node);
 
         // determine type of event definition, so the correct type of node can be generated
         org.w3c.dom.Node xmlNode = element.getFirstChild();
@@ -108,6 +113,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
             }
             xmlNode = xmlNode.getNextSibling();
         }
+
         NodeContainer nodeContainer = (NodeContainer) parser.getParent();
         nodeContainer.addNode(node);
         ((ProcessBuildData) parser.getData()).addNode(node);
@@ -116,7 +122,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
 
     @SuppressWarnings("unchecked")
     protected void handleEscalationNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser, final String attachedTo,
+            final String localName, final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         BoundaryEventNode eventNode = (BoundaryEventNode) node;
@@ -134,33 +140,27 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
             String nodeName = xmlNode.getNodeName();
-            if ("dataOutput".equals(nodeName)) {
-                String id = ((Element) xmlNode).getAttribute("id");
-                String outputName = ((Element) xmlNode).getAttribute("name");
-                dataOutputs.put(id, outputName);
-            } else if ("dataOutputAssociation".equals(nodeName)) {
-                readDataOutputAssociation(xmlNode, eventNode, parser);
-            } else if ("escalationEventDefinition".equals(nodeName)) {
+            if ("escalationEventDefinition".equals(nodeName)) {
+                String type = null;
                 String escalationRef = ((Element) xmlNode).getAttribute("escalationRef");
                 if (escalationRef != null && escalationRef.trim().length() > 0) {
                     Map<String, Escalation> escalations = (Map<String, Escalation>) ((ProcessBuildData) parser.getData()).getMetaData(ProcessHandler.ESCALATIONS);
                     if (escalations == null) {
-                        throw new IllegalArgumentException("No escalations found");
+                        throw new ProcessParsingValidationException("No escalations found");
                     }
                     Escalation escalation = escalations.get(escalationRef);
                     if (escalation == null) {
-                        throw new IllegalArgumentException("Could not find escalation " + escalationRef);
+                        throw new ProcessParsingValidationException("Could not find escalation " + escalationRef);
                     }
-                    List<EventFilter> eventFilters = new ArrayList<EventFilter>();
-                    EventTypeFilter eventFilter = new EventTypeFilter();
-                    String type = escalation.getEscalationCode();
-                    eventFilter.setType("Escalation-" + attachedTo + "-" + type);
-                    eventFilters.add(eventFilter);
-                    eventNode.setEventFilters(eventFilters);
-                    eventNode.setMetaData("EscalationEvent", type);
-                } else {
-                    throw new UnsupportedOperationException("General escalation is not yet supported.");
+                    type = escalation.getEscalationCode();
                 }
+                List<EventFilter> eventFilters = new ArrayList<>();
+                EventTypeFilter eventFilter = new EventTypeFilter();
+
+                eventFilter.setType("Escalation-" + attachedTo + (type != null ? "-" + type : ""));
+                eventFilters.add(eventFilter);
+                eventNode.setEventFilters(eventFilters);
+                eventNode.setMetaData("EscalationEvent", type);
             }
             xmlNode = xmlNode.getNextSibling();
         }
@@ -168,7 +168,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
 
     @SuppressWarnings("unchecked")
     protected void handleErrorNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser, final String attachedTo,
+            final String localName, final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         BoundaryEventNode eventNode = (BoundaryEventNode) node;
@@ -177,18 +177,12 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
             String nodeName = xmlNode.getNodeName();
-            if ("dataOutput".equals(nodeName)) {
-                String id = ((Element) xmlNode).getAttribute("id");
-                String outputName = ((Element) xmlNode).getAttribute("name");
-                dataOutputs.put(id, outputName);
-            } else if ("dataOutputAssociation".equals(nodeName)) {
-                readDataOutputAssociation(xmlNode, eventNode, parser);
-            } else if ("errorEventDefinition".equals(nodeName)) {
+            if ("errorEventDefinition".equals(nodeName)) {
                 String errorRef = ((Element) xmlNode).getAttribute("errorRef");
                 if (errorRef != null && errorRef.trim().length() > 0) {
                     List<Error> errors = (List<Error>) ((ProcessBuildData) parser.getData()).getMetaData("Errors");
                     if (errors == null) {
-                        throw new IllegalArgumentException("No errors found");
+                        throw new ProcessParsingValidationException("No errors found");
                     }
                     Error error = null;
                     for (Error listError : errors) {
@@ -197,7 +191,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                         }
                     }
                     if (error == null) {
-                        throw new IllegalArgumentException("Could not find error " + errorRef);
+                        throw new ProcessParsingValidationException("Could not find error " + errorRef);
                     }
                     String type = error.getErrorCode();
                     boolean hasErrorCode = true;
@@ -214,7 +208,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                         }
                     }
 
-                    List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                    List<EventFilter> eventFilters = new ArrayList<>();
                     EventTypeFilter eventFilter = new EventTypeFilter();
                     eventFilter.setType("Error-" + attachedTo + "-" + type);
                     eventFilters.add(eventFilter);
@@ -229,7 +223,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
     }
 
     protected void handleTimerNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser, final String attachedTo,
+            final String localName, final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         BoundaryEventNode eventNode = (BoundaryEventNode) node;
@@ -261,24 +255,24 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                     subNode = subNode.getNextSibling();
                 }
                 if (timeDuration != null && timeDuration.trim().length() > 0) {
-                    List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                    List<EventFilter> eventFilters = new ArrayList<>();
                     EventTypeFilter eventFilter = new EventTypeFilter();
-                    eventFilter.setType("Timer-" + attachedTo + "-" + timeDuration + "-" + eventNode.getId());
+                    eventFilter.setType("Timer-" + attachedTo + "-" + timeDuration + "-" + eventNode.getId().toExternalFormat());
                     eventFilters.add(eventFilter);
                     eventNode.setEventFilters(eventFilters);
                     eventNode.setMetaData("TimeDuration", timeDuration);
                 } else if (timeCycle != null && timeCycle.trim().length() > 0) {
-                    List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                    List<EventFilter> eventFilters = new ArrayList<>();
                     EventTypeFilter eventFilter = new EventTypeFilter();
-                    eventFilter.setType("Timer-" + attachedTo + "-" + timeCycle + "-" + eventNode.getId());
+                    eventFilter.setType("Timer-" + attachedTo + "-" + timeCycle + "-" + eventNode.getId().toExternalFormat());
                     eventFilters.add(eventFilter);
                     eventNode.setEventFilters(eventFilters);
                     eventNode.setMetaData("TimeCycle", timeCycle);
                     eventNode.setMetaData("Language", language);
                 } else if (timeDate != null && timeDate.trim().length() > 0) {
-                    List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                    List<EventFilter> eventFilters = new ArrayList<>();
                     EventTypeFilter eventFilter = new EventTypeFilter();
-                    eventFilter.setType("Timer-" + attachedTo + "-" + timeDate + "-" + eventNode.getId());
+                    eventFilter.setType("Timer-" + attachedTo + "-" + timeDate + "-" + eventNode.getId().toExternalFormat());
                     eventFilters.add(eventFilter);
                     eventNode.setEventFilters(eventFilters);
                     eventNode.setMetaData("TimeDate", timeDate);
@@ -290,7 +284,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
     }
 
     protected void handleCompensationNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser, final String attachedTo,
+            final String localName, final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         BoundaryEventNode eventNode = (BoundaryEventNode) parser.getCurrent();
 
@@ -302,7 +296,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                 if ("compensateEventDefinition".equalsIgnoreCase(el.getNodeName())) {
                     String activityRef = el.getAttribute("activityRef");
                     if (activityRef != null && activityRef.length() > 0) {
-                        logger.warn("activityRef value [" + activityRef + "] on Boundary Event '" + eventNode.getMetaData("UniqueId")
+                        logger.warn("activityRef value [" + activityRef + "] on Boundary Event '" + eventNode.getUniqueId()
                                 + "' ignored per the BPMN2 specification.");
                     }
                 }
@@ -317,17 +311,17 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
         // 2. Add the event filter (never fires, purely for dumping purposes)
         EventTypeFilter eventFilter = new NonAcceptingEventTypeFilter();
         eventFilter.setType("Compensation");
-        List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+        List<EventFilter> eventFilters = new ArrayList<>();
         eventNode.setEventFilters(eventFilters);
         eventFilters.add(eventFilter);
 
         // 3. Add compensation scope (with key/id: attachedTo)
-        ProcessHandler.addCompensationScope((RuleFlowProcess) parser.getParent(RuleFlowProcess.class), eventNode, parentContainer, attachedTo);
+        ProcessHandler.addCompensationScope((RuleFlowProcess) ((ExtensibleXmlParser) parser).getParent(RuleFlowProcess.class), eventNode, parentContainer, attachedTo);
     }
 
     protected void handleSignalNode(final Node node, final Element element,
             final String uri, final String localName,
-            final ExtensibleXmlParser parser, final String attachedTo,
+            final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         BoundaryEventNode eventNode = (BoundaryEventNode) node;
@@ -337,20 +331,13 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
             String nodeName = xmlNode.getNodeName();
-            if ("dataOutput".equals(nodeName)) {
-                String id = ((Element) xmlNode).getAttribute("id");
-                String outputName = ((Element) xmlNode).getAttribute("name");
-                dataOutputs.put(id, outputName);
-            }
-            if ("dataOutputAssociation".equals(nodeName)) {
-                readDataOutputAssociation(xmlNode, eventNode, parser);
-            } else if ("signalEventDefinition".equals(nodeName)) {
+            if ("signalEventDefinition".equals(nodeName)) {
                 String type = ((Element) xmlNode).getAttribute("signalRef");
                 if (type != null && type.trim().length() > 0) {
 
                     type = checkSignalAndConvertToRealSignalNam(parser, type);
 
-                    List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                    List<EventFilter> eventFilters = new ArrayList<>();
                     EventTypeFilter eventFilter = new EventTypeFilter();
                     eventFilter.setType(type);
                     eventFilters.add(eventFilter);
@@ -365,7 +352,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
 
     protected void handleConditionNode(final Node node, final Element element,
             final String uri, final String localName,
-            final ExtensibleXmlParser parser, final String attachedTo,
+            final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         BoundaryEventNode eventNode = (BoundaryEventNode) node;
@@ -375,19 +362,13 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
             String nodeName = xmlNode.getNodeName();
-            if ("dataOutput".equals(nodeName)) {
-                String id = ((Element) xmlNode).getAttribute("id");
-                String outputName = ((Element) xmlNode).getAttribute("name");
-                dataOutputs.put(id, outputName);
-            } else if ("dataOutputAssociation".equals(nodeName)) {
-                readDataOutputAssociation(xmlNode, eventNode, parser);
-            } else if ("conditionalEventDefinition".equals(nodeName)) {
+            if ("conditionalEventDefinition".equals(nodeName)) {
                 org.w3c.dom.Node subNode = xmlNode.getFirstChild();
                 while (subNode != null) {
                     String subnodeName = subNode.getNodeName();
                     if ("condition".equals(subnodeName)) {
                         eventNode.setMetaData("Condition", xmlNode.getTextContent());
-                        List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                        List<EventFilter> eventFilters = new ArrayList<>();
                         EventTypeFilter eventFilter = new EventTypeFilter();
                         eventFilter.setType("Condition-" + attachedTo);
                         eventFilters.add(eventFilter);
@@ -404,7 +385,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
 
     protected void handleMessageNode(final Node node, final Element element,
             final String uri, final String localName,
-            final ExtensibleXmlParser parser, final String attachedTo,
+            final Parser parser, final String attachedTo,
             final boolean cancelActivity) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         BoundaryEventNode eventNode = (BoundaryEventNode) node;
@@ -414,62 +395,32 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         while (xmlNode != null) {
             String nodeName = xmlNode.getNodeName();
-            if ("dataOutput".equals(nodeName)) {
-                String id = ((Element) xmlNode).getAttribute("id");
-                String outputName = ((Element) xmlNode).getAttribute("name");
-                dataOutputs.put(id, outputName);
-            } else if ("dataOutputAssociation".equals(nodeName)) {
-                readDataOutputAssociation(xmlNode, eventNode, parser);
-            } else if ("messageEventDefinition".equals(nodeName)) {
+            if ("messageEventDefinition".equals(nodeName)) {
                 String messageRef = ((Element) xmlNode).getAttribute("messageRef");
                 Map<String, Message> messages = (Map<String, Message>) ((ProcessBuildData) parser
                         .getData()).getMetaData("Messages");
                 if (messages == null) {
-                    throw new IllegalArgumentException("No messages found");
+                    throw new ProcessParsingValidationException("No messages found");
                 }
                 Message message = messages.get(messageRef);
                 if (message == null) {
-                    throw new IllegalArgumentException("Could not find message " + messageRef);
+                    throw new ProcessParsingValidationException("Could not find message " + messageRef);
                 }
                 eventNode.setMetaData("MessageType", message.getType());
                 eventNode.setMetaData("TriggerType", "ConsumeMessage");
                 eventNode.setMetaData("TriggerRef", message.getName());
-                List<EventFilter> eventFilters = new ArrayList<EventFilter>();
+                eventNode.setMetaData(MESSAGE_REF, message.getId());
+                List<EventFilter> eventFilters = new ArrayList<>();
                 EventTypeFilter eventFilter = new EventTypeFilter();
+                eventFilter.setCorrelationManager(((RuleFlowProcess) parser.getMetaData().get("CurrentProcessDefinition")).getCorrelationManager());
                 eventFilter.setType("Message-" + message.getName());
+                eventFilter.setMessageRef(message.getId());
                 eventFilters.add(eventFilter);
                 eventNode.setScope("external");
                 eventNode.setEventFilters(eventFilters);
             }
             xmlNode = xmlNode.getNextSibling();
         }
-    }
-
-    protected void readDataOutputAssociation(org.w3c.dom.Node xmlNode, EventNode eventNode, final ExtensibleXmlParser parser) {
-        // sourceRef
-        org.w3c.dom.Node subNode = xmlNode.getFirstChild();
-        String from = subNode.getTextContent();
-        // targetRef
-        subNode = subNode.getNextSibling();
-        String to = subNode.getTextContent();
-        // transformation
-        Transformation transformation = null;
-        subNode = subNode.getNextSibling();
-        if (subNode != null && "transformation".equals(subNode.getNodeName())) {
-            String lang = subNode.getAttributes().getNamedItem("language").getNodeValue();
-            String expression = subNode.getTextContent();
-            DataTransformer transformer = transformerRegistry.find(lang);
-            if (transformer == null) {
-                throw new IllegalArgumentException("No transformer registered for language " + lang);
-            }
-            transformation = new Transformation(lang, expression, dataOutputs.get(from));
-            eventNode.setMetaData("Transformation", transformation);
-
-            eventNode.setEventTransformer(new EventTransformerImpl(transformation));
-        }
-
-        eventNode.setVariableName(findVariable(to, parser));
-
     }
 
     public void writeNode(Node node, StringBuilder xmlDump, int metaDataType) {
@@ -486,6 +437,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                     xmlDump.append("cancelActivity=\"false\" ");
                 }
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
                 xmlDump.append("      <escalationEventDefinition escalationRef=\"" + XmlBPMNProcessDumper.replaceIllegalCharsAttribute(type) + "\" />" + EOL);
                 endNode("boundaryEvent", xmlDump);
@@ -494,8 +446,8 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                 writeNode("boundaryEvent", eventNode, xmlDump, metaDataType);
                 xmlDump.append("attachedToRef=\"" + attachedTo + "\" ");
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
-                writeVariableName(eventNode, xmlDump);
                 String errorId = getErrorIdForErrorCode(type, eventNode);
                 xmlDump.append("      <errorEventDefinition errorRef=\"" + XmlBPMNProcessDumper.replaceIllegalCharsAttribute(errorId) + "\" ");
                 xmlDump.append("/>" + EOL);
@@ -509,6 +461,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                     xmlDump.append("cancelActivity=\"false\" ");
                 }
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
                 String duration = (String) eventNode.getMetaData("TimeDuration");
                 String cycle = (String) eventNode.getMetaData("TimeCycle");
@@ -551,6 +504,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                 writeNode("boundaryEvent", eventNode, xmlDump, metaDataType);
                 xmlDump.append("attachedToRef=\"" + attachedTo + "\" ");
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
                 xmlDump.append("      <compensateEventDefinition/>" + EOL);
                 endNode("boundaryEvent", xmlDump);
@@ -562,6 +516,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                     xmlDump.append("cancelActivity=\"false\" ");
                 }
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
                 xmlDump.append("      <signalEventDefinition signalRef=\"" + type + "\"/>" + EOL);
                 endNode("boundaryEvent", xmlDump);
@@ -574,6 +529,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                     xmlDump.append("cancelActivity=\"false\" ");
                 }
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
                 xmlDump.append("      <conditionalEventDefinition>" + EOL);
                 xmlDump.append("        <condition xsi:type=\"tFormalExpression\" language=\"http://www.jboss.org/drools/rule\">" + eventNode.getMetaData("Condition") + "</condition>" + EOL);
@@ -584,6 +540,7 @@ public class BoundaryEventHandler extends AbstractNodeHandler {
                 writeNode("boundaryEvent", eventNode, xmlDump, metaDataType);
                 xmlDump.append("attachedToRef=\"" + attachedTo + "\" ");
                 xmlDump.append(">" + EOL);
+                writeCatchIO(eventNode.getIoSpecification(), xmlDump);
                 writeExtensionElements(node, xmlDump);
                 xmlDump.append("      <messageEventDefinition messageRef=\"" + type + "\"/>" + EOL);
                 endNode("boundaryEvent", xmlDump);

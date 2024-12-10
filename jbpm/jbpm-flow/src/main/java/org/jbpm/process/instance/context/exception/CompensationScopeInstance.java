@@ -1,17 +1,20 @@
 /*
- * Copyright 2013 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.context.exception;
 
@@ -37,15 +40,20 @@ import org.jbpm.workflow.instance.impl.WorkflowProcessInstanceImpl;
 import org.jbpm.workflow.instance.node.EventNodeInstance;
 import org.jbpm.workflow.instance.node.EventSubProcessNodeInstance;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
+import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.jbpm.process.core.context.exception.CompensationScope.IMPLICIT_COMPENSATION_PREFIX;
 
 public class CompensationScopeInstance extends ExceptionScopeInstance {
 
+    private static Logger LOG = LoggerFactory.getLogger(CompensationScopeInstance.class);
     private static final long serialVersionUID = 510l;
 
-    private Stack<NodeInstance> compensationInstances = new Stack<NodeInstance>();
+    private Stack<NodeInstance> compensationInstances = new Stack<>();
 
+    @Override
     public String getContextType() {
         return CompensationScope.COMPENSATION_SCOPE;
     }
@@ -54,16 +62,18 @@ public class CompensationScopeInstance extends ExceptionScopeInstance {
         this.compensationInstances.addAll(generatedInstances);
     }
 
-    public void handleException(String activityRef, Object dunno) {
+    @Override
+    public void handleException(String activityRef, KogitoProcessContext dunno) {
+        LOG.debug("Compensating exception {}", activityRef);
+
         assert activityRef != null : "It should not be possible for the compensation activity reference to be null here.";
 
         CompensationScope compensationScope = (CompensationScope) getExceptionScope();
         // broadcast/general compensation in reverse order
         if (activityRef.startsWith(IMPLICIT_COMPENSATION_PREFIX)) {
             activityRef = activityRef.substring(IMPLICIT_COMPENSATION_PREFIX.length());
-            assert activityRef.equals(compensationScope.getContextContainerId())
-                    : "Compensation activity ref [" + activityRef + "] does not match" +
-                            " Compensation Scope container id [" + compensationScope.getContextContainerId() + "]";
+            assert activityRef.equals(compensationScope.getContextContainerId()) : "Compensation activity ref [" + activityRef + "] does not match" +
+                    " Compensation Scope container id [" + compensationScope.getContextContainerId() + "]";
 
             Map<String, ExceptionHandler> handlers = compensationScope.getExceptionHandlers();
             List<String> completedNodeIds = ((WorkflowProcessInstanceImpl) getProcessInstance()).getCompletedNodeIds();
@@ -91,7 +101,8 @@ public class CompensationScopeInstance extends ExceptionScopeInstance {
         }
     }
 
-    public void handleException(ExceptionHandler handler, String compensationActivityRef, Object dunno) {
+    public void handleException(ExceptionHandler handler, String compensationActivityRef, KogitoProcessContext dunno) {
+        LOG.info("Compensating 2 exception {}", compensationActivityRef);
         WorkflowProcessInstanceImpl processInstance = (WorkflowProcessInstanceImpl) getProcessInstance();
         NodeInstanceContainer nodeInstanceContainer = (NodeInstanceContainer) getContextInstanceContainer();
         if (handler instanceof CompensationHandler) {
@@ -108,9 +119,9 @@ public class CompensationScopeInstance extends ExceptionScopeInstance {
                 } else if (handlerNode instanceof EventSubProcessNode) {
                     // Check that subprocess parent has completed. 
                     List<String> completedIds = processInstance.getCompletedNodeIds();
-                    if (completedIds.contains(((NodeImpl) ((Node) handlerNode).getParentContainer()).getMetaData("UniqueId"))) {
+                    if (completedIds.contains(((NodeImpl) ((Node) handlerNode).getParentContainer()).getUniqueId())) {
                         NodeInstance subProcessNodeInstance =
-                                ((NodeInstanceContainer) nodeInstanceContainer).getNodeInstance((org.kie.api.definition.process.Node) ((Node) handlerNode).getParentContainer());
+                                (nodeInstanceContainer).getNodeInstance((org.kie.api.definition.process.Node) ((Node) handlerNode).getParentContainer());
                         compensationInstances.add(subProcessNodeInstance);
                         NodeInstance compensationHandlerNodeInstance = ((NodeInstanceContainer) subProcessNodeInstance).getNodeInstance(handlerNode);
                         compensationInstances.add(compensationHandlerNodeInstance);
@@ -118,8 +129,7 @@ public class CompensationScopeInstance extends ExceptionScopeInstance {
                         eventNodeInstance.signalEvent("Compensation", compensationActivityRef);
                     }
                 }
-                assert handlerNode instanceof BoundaryEventNode || handlerNode instanceof EventSubProcessNode
-                        : "Unexpected compensation handler node type : " + handlerNode.getClass().getSimpleName();
+                assert handlerNode instanceof BoundaryEventNode || handlerNode instanceof EventSubProcessNode : "Unexpected compensation handler node type : " + handlerNode.getClass().getSimpleName();
             } catch (Exception e) {
                 throwWorkflowRuntimeException(nodeInstanceContainer, processInstance, "Unable to execute compensation.", e);
             }

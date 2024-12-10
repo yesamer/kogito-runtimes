@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.decision;
 
@@ -51,6 +54,10 @@ public class DecisionValidation {
 
     public static final Logger LOG = LoggerFactory.getLogger(DecisionValidation.class);
 
+    private DecisionValidation() {
+
+    }
+
     public static enum ValidationOption {
         /**
          * Perform DMN Validation and blocks if any Errors is found. This is the default.
@@ -75,13 +82,10 @@ public class DecisionValidation {
             LOG.info("DMN Validation was set to DISABLED, skipping VALIDATE_SCHEMA, VALIDATE_MODEL.");
             return;
         }
-        List<DMNMessage> schemaModelValidations = DMNValidatorFactory.newValidator(Arrays.asList(new ExtendedDMNProfile()))
+        List<DMNMessage> schemaModelValidations = DMNValidatorFactory.newValidator(List.of(new ExtendedDMNProfile()))
                 .validateUsing(DMNValidator.Validation.VALIDATE_SCHEMA,
                         DMNValidator.Validation.VALIDATE_MODEL)
-                .theseModels(resources.stream()
-                        .map(DecisionValidation::resourceToReader)
-                        .collect(Collectors.toList())
-                        .toArray(new Reader[] {}));
+                .theseModels(resources.toArray(new Resource[] {}));
         logValidationMessages(schemaModelValidations, DecisionValidation::extractMsgPrefix, DMNMessage::getText);
         processMessagesHandleErrors(validateOption, schemaModelValidations);
     }
@@ -106,7 +110,7 @@ public class DecisionValidation {
         }
         Optional<String> applicationProperty = context.getApplicationProperty(DecisionCodegen.VALIDATION_CONFIGURATION_KEY);
         if (!applicationProperty.isPresent()) {
-            return ValidationOption.ENABLED; // the default;
+            return ValidationOption.ENABLED; // the default
         }
         Optional<ValidationOption> configOption = Arrays.stream(ValidationOption.values())
                 .filter(e -> e.name().equalsIgnoreCase(applicationProperty.get()))
@@ -180,18 +184,17 @@ public class DecisionValidation {
     }
 
     private static void processMessagesHandleErrors(ValidationOption validateOption, Collection<DMNMessage> messages) {
-        List<DMNMessage> errors = messages.stream().filter(m -> m.getLevel() == Level.ERROR).collect(Collectors.toList());
+        List<DMNMessage> errors = messages.stream().filter(m -> m.getLevel() == Level.ERROR).toList();
         if (!errors.isEmpty()) {
             if (validateOption != ValidationOption.IGNORE) {
                 StringBuilder sb = new StringBuilder("DMN Validation schema and model validation contained errors").append("\n");
                 sb.append("You may configure ").append(DecisionCodegen.VALIDATION_CONFIGURATION_KEY).append("=IGNORE to ignore validation errors").append("\n");
                 sb.append("DMN Validation errors:").append("\n");
-                sb.append(errors.stream().map(m -> modelName(m) + ": " + m.getMessage()).collect(Collectors.joining(",\n")));
+                sb.append(errors.stream().map(m -> modelName(m) + ": " + m.getText()).collect(Collectors.joining(",\n")));
                 LOG.error(sb.toString());
                 throw new RuntimeException(sb.toString());
             } else {
                 LOG.warn("DMN Validation encountered errors but validation configuration was set to IGNORE, continuing with no blocking error.");
-                return;
             }
         }
     }

@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.core.context.variable;
 
@@ -22,14 +25,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import javax.lang.model.SourceVersion;
 
-import org.drools.core.util.StringUtils;
+import org.drools.util.StringUtils;
 import org.jbpm.process.core.TypeObject;
 import org.jbpm.process.core.ValueObject;
 import org.jbpm.process.core.datatype.DataType;
+import org.jbpm.process.core.datatype.impl.coverter.CloneHelper;
 import org.jbpm.process.core.datatype.impl.type.UndefinedDataType;
+import org.kie.kogito.internal.utils.KogitoTags;
 
 /**
  * Default implementation of a variable.
@@ -39,22 +45,16 @@ public class Variable implements TypeObject, ValueObject, Serializable {
 
     private static final long serialVersionUID = 510l;
 
-    public static final String VARIABLE_TAGS = "customTags";
-
-    public static final String READONLY_TAG = "readonly";
-    public static final String REQUIRED_TAG = "required";
-    public static final String INTERNAL_TAG = "internal";
-    public static final String INPUT_TAG = "input";
-    public static final String OUTPUT_TAG = "output";
     public static final String BUSINESS_RELEVANT = "business-relevant";
     public static final String TRACKED = "tracked";
+    public static final Set<String> KOGITO_RESERVED = Set.of("id");
 
     private String id;
     private String name;
     private String sanitizedName;
     private DataType type;
     private Object value;
-    private Map<String, Object> metaData = new HashMap<String, Object>();
+    private Map<String, Object> metaData = new HashMap<>();
 
     private List<String> tags = new ArrayList<>();
 
@@ -76,11 +76,11 @@ public class Variable implements TypeObject, ValueObject, Serializable {
     }
 
     /**
-     * Return a valid unique Java identifier based on the given @param name. It consider valid characters and
+     * Return a valid unique Java identifier based on the given @param name. It considers valid characters and
      * reserved words.
      * In case the input is valid it is returned itself otherwise a valid identifier is generated prefixing v$ based
      * on the @param input excluding invalid characters.
-     * 
+     *
      * @param name the input
      * @return the output valid Java identifier
      */
@@ -105,10 +105,12 @@ public class Variable implements TypeObject, ValueObject, Serializable {
         this.id = id;
     }
 
+    @Override
     public DataType getType() {
         return this.type;
     }
 
+    @Override
     public void setType(final DataType type) {
         if (type == null) {
             throw new IllegalArgumentException("type is null");
@@ -116,27 +118,24 @@ public class Variable implements TypeObject, ValueObject, Serializable {
         this.type = type;
     }
 
+    @Override
     public Object getValue() {
         return this.value;
     }
 
+    @Override
     public void setValue(final Object value) {
         if (this.type.verifyDataType(value)) {
             this.value = value;
         } else {
-            final StringBuilder sb = new StringBuilder();
-            sb.append("Value <");
-            sb.append(value);
-            sb.append("> is not valid for datatype: ");
-            sb.append(this.type);
-            throw new IllegalArgumentException(sb.toString());
+            throw new IllegalArgumentException("Value <" + value + "> of datatype: " + value.getClass() + " is not valid for datatype: " + type.getObjectClass());
         }
     }
 
     public void setMetaData(String name, Object value) {
         this.metaData.put(name, value);
 
-        if (VARIABLE_TAGS.equals(name) && value != null) {
+        if (KogitoTags.VARIABLE_TAGS.equals(name) && value != null) {
             tags = Arrays.asList(value.toString().split(","));
         }
     }
@@ -149,16 +148,21 @@ public class Variable implements TypeObject, ValueObject, Serializable {
         return this.metaData;
     }
 
+    @Override
     public String toString() {
         return this.name;
     }
 
     public List<String> getTags() {
-        if (tags.isEmpty() && this.metaData.containsKey(VARIABLE_TAGS)) {
-            tags = Arrays.asList(metaData.get(VARIABLE_TAGS).toString().split(","));
+        if (tags.isEmpty() && this.metaData.containsKey(KogitoTags.VARIABLE_TAGS)) {
+            tags = Arrays.asList(metaData.get(KogitoTags.VARIABLE_TAGS).toString().split(","));
 
         }
         return tags;
+    }
+
+    public Object cloneValue() {
+        return CloneHelper.get().clone(getValue());
     }
 
     public boolean hasTag(String tagName) {

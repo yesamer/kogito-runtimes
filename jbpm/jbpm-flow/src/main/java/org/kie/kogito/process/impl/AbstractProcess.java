@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.process.impl;
 
@@ -19,39 +22,56 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
+import org.jbpm.process.core.ProcessSupplier;
 import org.jbpm.process.core.timer.DateTimeUtils;
 import org.jbpm.process.core.timer.Timer;
 import org.jbpm.process.instance.InternalProcessRuntime;
 import org.jbpm.process.instance.LightProcessRuntime;
-import org.jbpm.process.instance.LightProcessRuntimeContext;
 import org.jbpm.process.instance.LightProcessRuntimeServiceProvider;
 import org.jbpm.process.instance.ProcessRuntimeServiceProvider;
+import org.jbpm.ruleflow.core.RuleFlowProcess;
 import org.jbpm.workflow.core.impl.WorkflowProcessImpl;
 import org.jbpm.workflow.core.node.StartNode;
 import org.kie.api.runtime.process.EventListener;
 import org.kie.api.runtime.process.WorkflowProcessInstance;
 import org.kie.kogito.Application;
 import org.kie.kogito.Model;
+import org.kie.kogito.correlation.CorrelationService;
+import org.kie.kogito.event.correlation.DefaultCorrelationService;
+import org.kie.kogito.internal.process.runtime.KogitoNode;
 import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.internal.process.runtime.KogitoProcessRuntime;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItemHandler;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItemManager;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemHandler;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemManager;
+import org.kie.kogito.internal.process.workitem.Policy;
+import org.kie.kogito.internal.process.workitem.WorkItemTransition;
+import org.kie.kogito.internal.utils.ConversionUtils;
 import org.kie.kogito.jobs.DurationExpirationTime;
 import org.kie.kogito.jobs.ExactExpirationTime;
 import org.kie.kogito.jobs.ExpirationTime;
-import org.kie.kogito.jobs.ProcessJobDescription;
+import org.kie.kogito.jobs.descriptors.ProcessJobDescription;
 import org.kie.kogito.process.MutableProcessInstances;
 import org.kie.kogito.process.Process;
 import org.kie.kogito.process.ProcessConfig;
 import org.kie.kogito.process.ProcessInstance;
-import org.kie.kogito.process.ProcessInstanceReadMode;
 import org.kie.kogito.process.ProcessInstances;
 import org.kie.kogito.process.ProcessInstancesFactory;
+import org.kie.kogito.process.ProcessVersionResolver;
 import org.kie.kogito.process.Signal;
+import org.kie.kogito.process.WorkItem;
+
+import static org.kie.kogito.internal.process.workitem.KogitoWorkItemHandlerFactory.findAllKogitoWorkItemHandlersRegistered;
 
 @SuppressWarnings("unchecked")
-public abstract class AbstractProcess<T extends Model> implements Process<T> {
+public abstract class AbstractProcess<T extends Model> implements Process<T>, ProcessSupplier {
 
     protected final ProcessRuntimeServiceProvider services;
     protected ProcessInstancesFactory processInstancesFactory;
@@ -64,44 +84,84 @@ public abstract class AbstractProcess<T extends Model> implements Process<T> {
     protected List<String> startTimerInstances = new ArrayList<>();
     protected KogitoProcessRuntime processRuntime;
 
+    private org.kie.api.definition.process.Process process;
+    private Lock processInitLock = new ReentrantLock();
+    private CorrelationService correlations;
+    private ProcessVersionResolver versionResolver;
+
     protected AbstractProcess() {
-        this(new LightProcessRuntimeServiceProvider());
+        this(null, new LightProcessRuntimeServiceProvider());
     }
 
-    protected AbstractProcess(ProcessConfig config) {
-        this(new ConfiguredProcessServices(config));
+    protected AbstractProcess(ProcessConfig config, Application application) {
+        this(application, new ConfiguredProcessServices(config));
     }
 
-    protected AbstractProcess(ProcessRuntimeServiceProvider services) {
-        this(services, Collections.emptyList(), null);
+    protected AbstractProcess(Application application, ProcessRuntimeServiceProvider services) {
+        this(application, services, Collections.emptyList(), null, null, null);
     }
 
-    protected AbstractProcess(Application app, Collection<KogitoWorkItemHandler> handlers) {
-        this(app, handlers, null);
+    protected AbstractProcess(Application app, Collection<KogitoWorkItemHandler> handlers, CorrelationService correlations) {
+        this(app, handlers, correlations, null);
     }
 
-    protected AbstractProcess(Application app, Collection<KogitoWorkItemHandler> handlers, ProcessInstancesFactory factory) {
-        this(new ConfiguredProcessServices(app.config().get(ProcessConfig.class)), handlers, factory);
+    protected AbstractProcess(Application app, Collection<KogitoWorkItemHandler> handlers, CorrelationService correlations, ProcessInstancesFactory factory) {
+        this(app, new ConfiguredProcessServices(app.config().get(ProcessConfig.class)), handlers, correlations, factory, app.config().get(ProcessConfig.class).versionResolver());
+
+    }
+
+    protected AbstractProcess(Application app, ProcessRuntimeServiceProvider services, Collection<KogitoWorkItemHandler> handlers, CorrelationService correlations, ProcessInstancesFactory factory,
+            ProcessVersionResolver versionResolver) {
         this.app = app;
-    }
-
-    protected AbstractProcess(ProcessRuntimeServiceProvider services, Collection<KogitoWorkItemHandler> handlers, ProcessInstancesFactory factory) {
         this.services = services;
         this.instances = new MapProcessInstances<>();
         this.processInstancesFactory = factory;
+        this.correlations = Optional.ofNullable(correlations).orElseGet(() -> new DefaultCorrelationService());
+        this.versionResolver = Optional.ofNullable(versionResolver).orElse(p -> get().getVersion());
         KogitoWorkItemManager workItemManager = services.getKogitoWorkItemManager();
-        for (KogitoWorkItemHandler handler : handlers) {
-            workItemManager.registerWorkItemHandler(handler.getName(), handler);
+
+        // loading defaults
+        Collection<String> handlerIds = workItemManager.getHandlerIds();
+        findAllKogitoWorkItemHandlersRegistered().stream().filter(e -> !handlerIds.contains(e.getName())).forEach(workItemHandler -> {
+            workItemHandler.setApplication(app);
+            workItemManager.registerWorkItemHandler(workItemHandler.getName(), workItemHandler);
+        });
+        // overriding kogito work item handlers
+        for (KogitoWorkItemHandler workItemHandler : handlers) {
+            workItemHandler.setApplication(app);
+            workItemManager.registerWorkItemHandler(workItemHandler.getName(), workItemHandler);
         }
     }
 
     @Override
     public String id() {
-        return process().getId();
+        return get().getId();
     }
 
+    @Override
     public String name() {
-        return process().getName();
+        return get().getName();
+    }
+
+    @Override
+    public WorkItemTransition newTransition(WorkItem workItem, String transitionId, Map<String, Object> map, Policy... policy) {
+        KogitoWorkItemHandler handler = getKogitoWorkItemHandler(workItem.getWorkItemHandlerName());
+        return handler.newTransition(transitionId, workItem.getPhaseStatus(), map, policy);
+    }
+
+    @Override
+    public KogitoWorkItemHandler getKogitoWorkItemHandler(String workItemHandlerName) {
+        return services.getKogitoWorkItemManager().getKogitoWorkItemHandler(workItemHandlerName);
+    }
+
+    @Override
+    public String version() {
+        return versionResolver.apply(this);
+    }
+
+    @Override
+    public String type() {
+        return get().getType();
     }
 
     @Override
@@ -119,22 +179,31 @@ public abstract class AbstractProcess<T extends Model> implements Process<T> {
     public abstract ProcessInstance<T> createReadOnlyInstance(WorkflowProcessInstance wpi);
 
     @Override
+    public Collection<KogitoNode> findNodes(Predicate<KogitoNode> filter) {
+        RuleFlowProcess p = (RuleFlowProcess) this.process;
+        return p.getNodesRecursively().stream().map(n -> (KogitoNode) n).filter(filter).collect(Collectors.toList());
+    }
+
+    @Override
     public ProcessInstances<T> instances() {
         return instances;
     }
 
     @Override
+    public CorrelationService correlations() {
+        return correlations;
+    }
+
+    @Override
     public <S> void send(Signal<S> signal) {
-        instances().values(ProcessInstanceReadMode.MUTABLE).forEach(pi -> pi.send(signal));
+        getProcessRuntime().signalEvent(signal.channel(), signal.payload());
     }
 
     public Process<T> configure() {
-
         registerListeners();
         if (isProcessFactorySet()) {
             this.instances = (MutableProcessInstances<T>) processInstancesFactory.createProcessInstances(this);
         }
-
         return this;
     }
 
@@ -142,20 +211,23 @@ public abstract class AbstractProcess<T extends Model> implements Process<T> {
 
     }
 
+    public KogitoProcessRuntime getProcessRuntime() {
+        return this.processRuntime;
+    }
+
     @Override
     public void activate() {
         if (this.activated) {
             return;
         }
-
+        this.processRuntime = createProcessRuntime().getKogitoProcessRuntime();
+        WorkflowProcessImpl p = (WorkflowProcessImpl) get();
         configure();
-        WorkflowProcessImpl p = (WorkflowProcessImpl) process();
         List<StartNode> startNodes = p.getTimerStart();
         if (startNodes != null && !startNodes.isEmpty()) {
-            this.processRuntime = createProcessRuntime().getKogitoProcessRuntime();
             for (StartNode startNode : startNodes) {
                 if (startNode != null && startNode.getTimer() != null) {
-                    String timerId = processRuntime.getJobsService().scheduleProcessJob(ProcessJobDescription.of(configureTimerInstance(startNode.getTimer()), this));
+                    String timerId = processRuntime.getJobsService().scheduleJob(ProcessJobDescription.of(configureTimerInstance(startNode.getTimer()), this));
                     startTimerInstances.add(timerId);
                 }
             }
@@ -201,10 +273,23 @@ public abstract class AbstractProcess<T extends Model> implements Process<T> {
         }
     }
 
-    public abstract org.kie.api.definition.process.Process process();
+    @Override
+    public org.kie.api.definition.process.Process get() {
+        processInitLock.lock();
+        try {
+            if (process == null) {
+                process = process();
+            }
+        } finally {
+            processInitLock.unlock();
+        }
+        return process;
+    }
+
+    protected abstract org.kie.api.definition.process.Process process();
 
     protected InternalProcessRuntime createProcessRuntime() {
-        return new LightProcessRuntime(new LightProcessRuntimeContext(Collections.singletonList(process())), services);
+        return LightProcessRuntime.of(app, Collections.singletonList(get()), services);
     }
 
     protected boolean isProcessFactorySet() {
@@ -229,8 +314,16 @@ public abstract class AbstractProcess<T extends Model> implements Process<T> {
         public void signalEvent(String type, Object event) {
             if (type.startsWith("processInstanceCompleted:")) {
                 KogitoProcessInstance pi = (KogitoProcessInstance) event;
-                if (!id().equals(pi.getProcessId()) && pi.getParentProcessInstanceStringId() != null) {
-                    instances().findById(pi.getParentProcessInstanceStringId()).ifPresent(p -> p.send(Sig.of(type, event)));
+                String parentProcessInstanceId = pi.getParentProcessInstanceId();
+                if (!id().equals(pi.getProcessId()) && ConversionUtils.isNotEmpty(parentProcessInstanceId)) {
+                    //checking if parent is present in ProcessInstanceManager (in-memory local transaction)
+                    KogitoProcessInstance parentKogitoProcessInstance = services.getProcessInstanceManager().getProcessInstance(parentProcessInstanceId);
+                    if (parentKogitoProcessInstance != null) {
+                        parentKogitoProcessInstance.signalEvent(type, event);
+                    } else {
+                        //if not present ProcessInstanceManager try to signal instance from repository
+                        instances().findById(pi.getParentProcessInstanceId()).ifPresent(p -> p.send(Sig.of(type, event)));
+                    }
                 }
             }
         }
@@ -239,5 +332,22 @@ public abstract class AbstractProcess<T extends Model> implements Process<T> {
         public String[] getEventTypes() {
             return new String[0];
         }
+    }
+
+    @Override
+    public int hashCode() {
+        return id().hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        AbstractProcess other = (AbstractProcess) obj;
+        return Objects.equals(id(), other.id());
     }
 }

@@ -1,66 +1,93 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.process.impl;
 
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import org.jbpm.process.instance.impl.humantask.HumanTaskHelper;
-import org.jbpm.process.instance.impl.humantask.HumanTaskTransition;
 import org.jbpm.util.JsonSchemaUtil;
+import org.jbpm.workflow.core.node.WorkItemNode;
+import org.jbpm.workflow.instance.node.WorkItemNodeInstance;
 import org.kie.kogito.Application;
 import org.kie.kogito.MapOutput;
 import org.kie.kogito.MappableToModel;
 import org.kie.kogito.Model;
+import org.kie.kogito.config.ConfigBean;
+import org.kie.kogito.correlation.CompositeCorrelation;
+import org.kie.kogito.internal.process.runtime.KogitoNode;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemHandler;
+import org.kie.kogito.internal.process.workitem.Policy;
+import org.kie.kogito.internal.process.workitem.WorkItemNotFoundException;
 import org.kie.kogito.process.Process;
-import org.kie.kogito.process.ProcessConfig;
 import org.kie.kogito.process.ProcessInstance;
+import org.kie.kogito.process.ProcessInstanceNotFoundException;
 import org.kie.kogito.process.ProcessInstanceReadMode;
 import org.kie.kogito.process.ProcessService;
 import org.kie.kogito.process.WorkItem;
-import org.kie.kogito.process.workitem.Attachment;
-import org.kie.kogito.process.workitem.AttachmentInfo;
-import org.kie.kogito.process.workitem.Comment;
-import org.kie.kogito.process.workitem.HumanTaskWorkItem;
-import org.kie.kogito.process.workitem.Policies;
 import org.kie.kogito.services.uow.UnitOfWorkExecutor;
+
+import static java.util.Collections.emptyMap;
 
 public class ProcessServiceImpl implements ProcessService {
 
     private final Application application;
+    private final short processInstanceLimit;
 
     public ProcessServiceImpl(Application application) {
         this.application = application;
+        this.processInstanceLimit = application.config().get(ConfigBean.class).processInstanceLimit();
+    }
+
+    @Override
+    public <T extends Model> ProcessInstance<T> createProcessInstance(Process<T> process, String businessKey,
+            T model, Map<String, List<String>> headers,
+            String startFromNodeId) {
+        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> {
+            ProcessInstance<T> pi = process.createInstance(businessKey, model);
+            if (startFromNodeId != null) {
+                pi.startFrom(startFromNodeId, headers);
+            } else {
+                pi.start(headers);
+            }
+            return pi;
+        });
     }
 
     @Override
     public <T extends Model> ProcessInstance<T> createProcessInstance(Process<T> process, String businessKey,
             T model,
-            String startFromNodeId) {
+            Map<String, List<String>> headers,
+            String startFromNodeId,
+            String trigger,
+            String kogitoReferenceId,
+            CompositeCorrelation correlation) {
         return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> {
-            ProcessInstance<T> pi = process.createInstance(businessKey, model);
+            ProcessInstance<T> pi = process.createInstance(businessKey, correlation, model);
             if (startFromNodeId != null) {
-                pi.startFrom(startFromNodeId);
+                pi.startFrom(startFromNodeId, kogitoReferenceId, headers);
             } else {
-                pi.start();
+                pi.start(trigger, kogitoReferenceId, headers);
             }
             return pi;
         });
@@ -68,18 +95,29 @@ public class ProcessServiceImpl implements ProcessService {
 
     @Override
     public <T extends MappableToModel<R>, R> List<R> getProcessInstanceOutput(Process<T> process) {
-        return process.instances().values().stream()
-                .map(ProcessInstance::variables)
-                .map(MappableToModel::toModel)
-                .collect(Collectors.toList());
+        try (Stream<ProcessInstance<T>> stream = process.instances().stream().limit(processInstanceLimit)) {
+            return stream.map(ProcessInstance::variables)
+                    .map(MappableToModel::toModel)
+                    .collect(Collectors.toList());
+        }
     }
 
     @Override
     public <T extends MappableToModel<R>, R> Optional<R> findById(Process<T> process, String id) {
-        return process.instances()
-                .findById(id, ProcessInstanceReadMode.READ_ONLY)
-                .map(ProcessInstance::variables)
-                .map(MappableToModel::toModel);
+        Optional<ProcessInstance<T>> instance = process.instances()
+                .findById(id, ProcessInstanceReadMode.READ_ONLY);
+        Optional<T> mappable = instance.map(ProcessInstance::variables);
+        return mappable.map(MappableToModel::toModel);
+    }
+
+    @Override
+    public <T> void migrateProcessInstances(Process<T> process, String targetProcessId, String targetProcessVersion, String... processIds) throws UnsupportedOperationException {
+        process.instances().migrateProcessInstances(targetProcessId, targetProcessVersion, processIds);
+    }
+
+    @Override
+    public <T> long migrateAll(Process<T> process, String targetProcessId, String targetProcessVersion) throws UnsupportedOperationException {
+        return process.instances().migrateAll(targetProcessId, targetProcessVersion);
     }
 
     @Override
@@ -110,274 +148,14 @@ public class ProcessServiceImpl implements ProcessService {
     }
 
     @Override
-    public <T extends Model> Optional<List<WorkItem>> getTasks(Process<T> process, String id, String user, List<String> groups) {
-        return process.instances()
-                .findById(id, ProcessInstanceReadMode.READ_ONLY)
-                .map(pi -> pi.workItems(Policies.of(user, groups)));
-    }
-
-    @Override
-    public <T extends Model> Optional<WorkItem> signalTask(Process<T> process, String id, String taskNodeName, String taskName) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> process
-                .instances()
-                .findById(id)
-                .map(pi -> {
-                    pi.send(Sig.of(taskNodeName, Collections.emptyMap()));
-                    return pi;
-                })
-                .map(pi -> getTaskByName(pi, taskName).orElse(null)));
-    }
-
-    @Override
-    public <T extends Model> Optional<WorkItem> getTaskByName(ProcessInstance<T> pi, String taskName) {
-        return pi
-                .workItems()
-                .stream()
-                .filter(wi -> wi.getName().equals(taskName))
-                .findFirst();
-    }
-
-    @Override
-    public <T extends MappableToModel<R>, R> Optional<R> completeTask(Process<T> process,
-            String id,
-            String taskId,
-            String phase,
-            String user,
-            List<String> groups,
-            MapOutput taskModel) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> process
-                .instances()
-                .findById(id)
-                .map(pi -> {
-                    pi.transitionWorkItem(
-                            taskId,
-                            HumanTaskTransition.withModel(phase, taskModel, Policies.of(user, groups)));
-                    return pi;
-                })
-                .map(ProcessInstance::variables)
-                .map(MappableToModel::toModel));
-    }
-
-    @Override
-    public <T extends Model, R extends MapOutput> Optional<R> saveTask(Process<T> process,
-            String id,
-            String taskId,
-            String user,
-            List<String> groups,
-            MapOutput model,
-            Function<Map<String, Object>, R> mapper) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> process
-                .instances()
-                .findById(id)
-                .map(pi -> pi.updateWorkItem(taskId, wi -> HumanTaskHelper.updateContent(wi, model), Policies.of(user, groups))))
-                .map(mapper::apply);
-    }
-
-    @Override
-    public <T extends MappableToModel<R>, R> Optional<R> taskTransition(
-            Process<T> process,
-            String id,
-            String taskId,
-            String phase,
-            String user,
-            List<String> groups,
-            MapOutput model) {
+    public <T extends MappableToModel<R>, R> Optional<R> updatePartial(Process<T> process, String id, T resource) {
         return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
+                application.unitOfWorkManager(),
+                () -> process
                         .instances()
                         .findById(id)
-                        .map(pi -> {
-                            pi.transitionWorkItem(
-                                    taskId,
-                                    HumanTaskTransition.withModel(phase, model, Policies.of(user, groups)));
-                            return pi.variables().toModel();
-                        }));
-    }
-
-    @Override
-    public <T extends MappableToModel<?>, R> Optional<R> getTask(Process<T> process,
-            String id,
-            String taskId,
-            String user,
-            List<String> groups,
-            Function<WorkItem, R> mapper) {
-        return process.instances()
-                .findById(id, ProcessInstanceReadMode.READ_ONLY)
-                .map(pi -> pi.workItem(taskId, Policies.of(user, groups)))
-                .map(mapper::apply);
-    }
-
-    @Override
-    public <T extends MappableToModel<R>, R> Optional<R> abortTask(Process<T> process,
-            String id,
-            String taskId,
-            String phase,
-            String user,
-            List<String> groups) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> {
-                            pi.transitionWorkItem(taskId,
-                                    HumanTaskTransition.withoutModel(phase,
-                                            Policies.of(user, groups)));
-                            return pi.variables().toModel();
-                        }));
-    }
-
-    @Override
-    public <T extends Model> Optional<Comment> addComment(Process<T> process,
-            String id,
-            String taskId,
-            String user,
-            List<String> groups,
-            String commentInfo) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> pi.updateWorkItem(
-                                taskId,
-                                wi -> HumanTaskHelper.addComment(wi, commentInfo, user),
-                                Policies.of(user, groups))));
-    }
-
-    @Override
-    public <T extends Model> Optional<Comment> updateComment(Process<T> process,
-            String id,
-            String taskId,
-            String commentId,
-            String user,
-            List<String> groups,
-            String commentInfo) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> pi.updateWorkItem(
-                                taskId,
-                                wi -> HumanTaskHelper.updateComment(wi, commentId, commentInfo, user),
-                                Policies.of(user, groups))));
-    }
-
-    @Override
-    public <T extends Model> Optional<Boolean> deleteComment(Process<T> process,
-            String id,
-            String taskId,
-            String commentId,
-            String user,
-            List<String> groups) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> pi.updateWorkItem(
-                                taskId,
-                                wi -> HumanTaskHelper.deleteComment(wi, commentId, user),
-                                Policies.of(user, groups))));
-    }
-
-    @Override
-    public <T extends Model> Optional<Attachment> addAttachment(Process<T> process,
-            String id,
-            String taskId,
-            String user,
-            List<String> groups,
-            AttachmentInfo attachmentInfo) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> pi.updateWorkItem(
-                                taskId,
-                                wi -> HumanTaskHelper.addAttachment(wi, attachmentInfo, user),
-                                Policies.of(user, groups))));
-    }
-
-    @Override
-    public <T extends Model> Optional<Attachment> updateAttachment(Process<T> process,
-            String id,
-            String taskId,
-            String attachmentId,
-            String user,
-            List<String> groups,
-            AttachmentInfo attachment) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> pi.updateWorkItem(
-                                taskId,
-                                wi -> HumanTaskHelper.updateAttachment(wi, attachmentId, attachment, user),
-                                Policies.of(user, groups))));
-    }
-
-    @Override
-    public <T extends Model> Optional<Boolean> deleteAttachment(Process<T> process,
-            String id,
-            String taskId,
-            String attachmentId,
-            String user,
-            List<String> groups) {
-        return UnitOfWorkExecutor.executeInUnitOfWork(
-                application.unitOfWorkManager(), () -> process
-                        .instances()
-                        .findById(id)
-                        .map(pi -> pi.updateWorkItem(
-                                taskId,
-                                wi -> HumanTaskHelper.deleteAttachment(wi, attachmentId, user),
-                                Policies.of(user, groups))));
-    }
-
-    @Override
-    public <T extends Model> Optional<Attachment> getAttachment(Process<T> process,
-            String id,
-            String taskId,
-            String attachmentId,
-            String user,
-            List<String> groups) {
-        return process.instances().findById(id)
-                .map(pi -> HumanTaskHelper.findTask(pi, taskId, Policies.of(user, groups)))
-                .map(HumanTaskWorkItem::getAttachments)
-                .map(attachments -> attachments.get(attachmentId));
-    }
-
-    @Override
-    public <T extends Model> Optional<Collection<Attachment>> getAttachments(Process<T> process,
-            String id,
-            String taskId,
-            String user,
-            List<String> groups) {
-        return process.instances().findById(id)
-                .map(pi -> HumanTaskHelper.findTask(pi, taskId, Policies.of(user, groups)))
-                .map(HumanTaskWorkItem::getAttachments)
-                .map(Map::values);
-    }
-
-    @Override
-    public <T extends Model> Optional<Comment> getComment(Process<T> process,
-            String id,
-            String taskId,
-            String commentId,
-            String user,
-            List<String> groups) {
-        return process.instances().findById(id)
-                .map(pi -> HumanTaskHelper.findTask(pi, taskId, Policies.of(user, groups)))
-                .map(HumanTaskWorkItem::getComments)
-                .map(comments -> comments.get(commentId));
-    }
-
-    @Override
-    public <T extends Model> Optional<Collection<Comment>> getComments(Process<T> process,
-            String id,
-            String taskId,
-            String user,
-            List<String> groups) {
-        return process.instances().findById(id)
-                .map(pi -> HumanTaskHelper.findTask(pi, taskId, Policies.of(user, groups)))
-                .map(HumanTaskWorkItem::getComments)
-                .map(Map::values);
+                        .map(pi -> pi.updateVariablesPartially(resource))
+                        .map(MappableToModel::toModel));
     }
 
     @Override
@@ -390,19 +168,114 @@ public class ProcessServiceImpl implements ProcessService {
                         }));
     }
 
-    //Schema
     @Override
-    public <T extends Model> Map<String, Object> getSchemaAndPhases(Process<T> process,
+    public <T extends Model> Optional<List<WorkItem>> getWorkItems(Process<T> process, String id, Policy... policy) {
+        return process.instances()
+                .findById(id, ProcessInstanceReadMode.READ_ONLY)
+                .map(pi -> pi.workItems(WorkItemNodeInstance.class::isInstance, policy));
+    }
+
+    @Override
+    public <T extends Model> Optional<WorkItem> signalWorkItem(Process<T> process, String id, String taskNodeName, Policy... policy) {
+        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> {
+            Optional<ProcessInstance<T>> piFound = process.instances().findById(id);
+            if (piFound.isEmpty()) {
+                return Optional.empty();
+            }
+
+            ProcessInstance<T> pi = piFound.get();
+            return findWorkItem(pi, taskNodeName, policy);
+        });
+    }
+
+    private <T extends Model> Optional<WorkItem> findWorkItem(ProcessInstance<T> pi, String taskName, Policy... policy) {
+        KogitoNode node = pi.process().findNodes(worktItemNodeNamed(taskName)).iterator().next();
+        String taskNodeName = node.getName();
+        pi.send(Sig.of(taskNodeName, emptyMap()));
+        return getWorkItemByTaskName(pi, taskName, policy);
+    }
+
+    private Predicate<KogitoNode> worktItemNodeNamed(String taskName) {
+        return node -> node instanceof WorkItemNode workItemNode && taskName.equals(workItemNode.getWork().getParameter("TaskName"));
+    }
+
+    private <T extends Model> Optional<WorkItem> getWorkItemByTaskName(ProcessInstance<T> pi, String taskName, Policy... policies) {
+        return pi.workItems(policies)
+                .stream()
+                .filter(wi -> wi.getName().equals(taskName))
+                .findFirst();
+    }
+
+    @Override
+    public <T extends MappableToModel<R>, R> Optional<R> transitionWorkItem(
+            Process<T> process,
+            String processInstanceId,
+            String workItemId,
+            String phaseId,
+            Policy policy,
+            MapOutput model) {
+
+        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> {
+            return process.instances()
+                    .findById(processInstanceId)
+                    .map(pi -> {
+                        WorkItem workItem = pi.workItem(workItemId, policy);
+                        pi.transitionWorkItem(workItemId, process.newTransition(workItem, phaseId, model.toMap(), policy));
+                        return pi.variables().toModel();
+                    });
+        });
+    }
+
+    @Override
+    public <T extends MappableToModel<?>, R> Optional<R> getWorkItem(Process<T> process,
             String id,
             String taskId,
-            String user,
-            List<String> groups) {
+            Policy policy,
+            Function<WorkItem, R> mapper) {
+        return process.instances()
+                .findById(id, ProcessInstanceReadMode.READ_ONLY)
+                .map(pi -> pi.workItem(taskId, policy))
+                .map(mapper);
+    }
+
+    @Override
+    public <T extends Model, R extends MapOutput> Optional<R> setWorkItemOutput(Process<T> process,
+            String id,
+            String taskId,
+            Policy policy,
+            MapOutput model,
+            Function<Map<String, Object>, R> mapper) {
+        return UnitOfWorkExecutor.executeInUnitOfWork(application.unitOfWorkManager(), () -> {
+            return process.instances().findById(id)
+                    .map(pi -> pi.updateWorkItem(taskId, wi -> {
+                        wi.setOutputs(model.toMap());
+                        return model.toMap();
+                    }, policy)).map(mapper);
+        });
+    }
+
+    //Schema
+    @Override
+    public <T extends Model> Map<String, Object> getWorkItemSchemaAndPhases(Process<T> process,
+            String processInstanceId,
+            String workItemId,
+            String workItemTaskName,
+            Policy policy) {
+        // try to find work item handler
+        ProcessInstance<T> pi = process.instances().findById(processInstanceId).orElseThrow(() -> new ProcessInstanceNotFoundException(processInstanceId));
+        WorkItem workItem = pi.workItems(policy).stream()
+                .filter(wi -> wi.getId().equals(workItemId))
+                .findFirst()
+                .orElseThrow(() -> new WorkItemNotFoundException(workItemId));
+        KogitoWorkItemHandler handler = process.getKogitoWorkItemHandler(workItem.getWorkItemHandlerName());
+        // we compute the phases
         return JsonSchemaUtil.addPhases(
                 process,
-                application.config().get(ProcessConfig.class).workItemHandlers().forName("Human Task"),
-                id,
-                taskId,
-                Policies.of(user, groups),
-                JsonSchemaUtil.load(this.getClass().getClassLoader(), process.id(), "$taskName$"));
+                handler,
+                processInstanceId,
+                workItemId,
+                new Policy[] { policy },
+                JsonSchemaUtil.load(Thread.currentThread().getContextClassLoader(), process.id(), workItemTaskName));
     }
+
 }

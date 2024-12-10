@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.prediction;
 
@@ -27,7 +30,6 @@ import java.nio.file.WatchService;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -41,6 +43,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.kie.kogito.pmml.CommonTestUtility.getKiePMMLModelInternal;
 
 class PredictionContainerGeneratorTest {
 
@@ -72,7 +75,6 @@ class PredictionContainerGeneratorTest {
                 .stream()
                 .map(pmmlResource -> "\"" + pmmlResource.getModelPath() + "\"")
                 .collect(Collectors.joining(", "));
-        expected = String.format("init(%s);", expected);
         assertTrue(retrievedString.contains(expected));
 
     }
@@ -86,18 +88,8 @@ class PredictionContainerGeneratorTest {
         Path path = getPath();
         String modelPath = "path/to/" + resourceName;
         List<KiePMMLModel> kiePmmlModels =
-                IntStream.range(0, 3).mapToObj(i -> getKiePMMLModelInternal(resourceName + "_Model-" + i)).collect(Collectors.toList());
-        return new PMMLResource(kiePmmlModels, path, modelPath);
-    }
-
-    private static KiePMMLModel getKiePMMLModelInternal(String modelName) {
-        return new KiePMMLModel(modelName, Collections.emptyList()) {
-
-            @Override
-            public Object evaluate(Object o, Map<String, Object> map) {
-                return null;
-            }
-        };
+                IntStream.range(0, 3).mapToObj(i -> getKiePMMLModelInternal(resourceName, resourceName + "_Model-" + i)).collect(Collectors.toList());
+        return new PMMLResource(kiePmmlModels, path, modelPath, Collections.emptyMap(), Collections.emptyMap());
     }
 
     private static Path getPath() {

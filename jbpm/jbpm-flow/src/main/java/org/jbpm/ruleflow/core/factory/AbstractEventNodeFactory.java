@@ -1,31 +1,37 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.ruleflow.core.factory;
 
 import org.jbpm.process.core.event.EventFilter;
-import org.jbpm.process.core.event.EventTransformer;
 import org.jbpm.process.core.event.EventTypeFilter;
 import org.jbpm.ruleflow.core.RuleFlowNodeContainerFactory;
+import org.jbpm.ruleflow.core.RuleFlowProcess;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.NodeContainer;
 import org.jbpm.workflow.core.node.EventNode;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
+
+import static org.jbpm.ruleflow.core.Metadata.MESSAGE_REF;
 
 public abstract class AbstractEventNodeFactory<T extends AbstractEventNodeFactory<T, P>, P extends RuleFlowNodeContainerFactory<P, ?>> extends ExtendedNodeFactory<T, P> {
 
-    protected AbstractEventNodeFactory(P nodeContainerFactory, NodeContainer nodeContainer, Node node, long id) {
+    protected AbstractEventNodeFactory(P nodeContainerFactory, NodeContainer nodeContainer, Node node, WorkflowElementIdentifier id) {
         super(nodeContainerFactory, nodeContainer, node, id);
     }
 
@@ -38,6 +44,11 @@ public abstract class AbstractEventNodeFactory<T extends AbstractEventNodeFactor
         return (T) this;
     }
 
+    public T inputVariableName(String variableName) {
+        getEventNode().setInputVariableName(variableName);
+        return (T) this;
+    }
+
     public T eventFilter(EventFilter eventFilter) {
         getEventNode().addEventFilter(eventFilter);
         return (T) this;
@@ -46,12 +57,9 @@ public abstract class AbstractEventNodeFactory<T extends AbstractEventNodeFactor
     public T eventType(String eventType) {
         EventTypeFilter filter = new EventTypeFilter();
         filter.setType(eventType);
+        filter.setCorrelationManager(((RuleFlowProcess) getEventNode().getProcess()).getCorrelationManager());
+        filter.setMessageRef((String) getNode().getMetaData().get(MESSAGE_REF));
         return eventFilter(filter);
-    }
-
-    public T eventTransformer(EventTransformer transformer) {
-        getEventNode().setEventTransformer(transformer);
-        return (T) this;
     }
 
     public T scope(String scope) {

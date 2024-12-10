@@ -1,70 +1,39 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.persistence.proto;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class ProtoMessage {
+public class ProtoMessage extends ProtoComponent {
 
-    private String name;
-    private String javaPackageOption;
-    private List<ProtoField> fields = new ArrayList<ProtoField>();
-    private String comment;
+    private List<ProtoField> fields = new ArrayList<>();
 
     public ProtoMessage(String name, String javaPackageOption) {
-        super();
-        this.name = name;
-        this.javaPackageOption = javaPackageOption;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
+        super(name, javaPackageOption);
     }
 
     public List<ProtoField> getFields() {
         return fields;
     }
 
-    public void setFields(List<ProtoField> fields) {
-        this.fields = fields;
-    }
-
-    public String getJavaPackageOption() {
-        return javaPackageOption;
-    }
-
-    public void setJavaPackageOption(String javaPackageOption) {
-        this.javaPackageOption = javaPackageOption;
-    }
-
-    public String getComment() {
-        return comment;
-    }
-
-    public void setComment(String comment) {
-        this.comment = comment;
-    }
-
     public ProtoField addField(String applicability, String type, String name) {
-
         int index = fields.size() + 1;
         ProtoField field = new ProtoField(applicability, type, name, index);
         if (!fields.contains(field)) {
@@ -74,20 +43,25 @@ public class ProtoMessage {
         return field;
     }
 
-    @Override
-    public String toString() {
+    public String serialize() {
         StringBuilder tostring = new StringBuilder();
         if (comment != null) {
-            tostring.append("/* " + comment + " */ \n");
+            tostring.append("/* ").append(comment).append(" */ \n");
         }
-        tostring.append("message " + name + " { \n");
+        tostring.append("message ").append(name).append(" { \n");
         if (javaPackageOption != null) {
-            tostring.append("\toption java_package = \"" + javaPackageOption + "\";\n");
+            tostring.append("\toption java_package = \"").append(javaPackageOption).append("\";\n");
         }
         fields.forEach(f -> tostring.append(f.toString()));
         tostring.append("}\n");
 
         return tostring.toString();
+
+    }
+
+    @Override
+    public String toString() {
+        return serialize();
     }
 
     @Override

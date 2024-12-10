@@ -1,33 +1,28 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.rules;
 
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import org.drools.compiler.compiler.DroolsError;
-import org.drools.modelcompiler.builder.QueryModel;
-import org.kie.internal.ruleunit.RuleUnitDescription;
-import org.kie.kogito.codegen.api.GeneratedFile;
-import org.kie.kogito.codegen.api.context.KogitoBuildContext;
-import org.kie.kogito.codegen.api.context.impl.JavaKogitoBuildContext;
-import org.kie.kogito.codegen.api.template.TemplatedGenerator;
+import org.drools.codegen.common.GeneratedFile;
 import org.kie.kogito.codegen.core.BodyDeclarationComparator;
 
 import com.github.javaparser.ast.CompilationUnit;
@@ -39,7 +34,6 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
-import com.github.javaparser.ast.expr.ClassExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.Name;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -52,90 +46,25 @@ import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.type.Type;
 
-import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
 import static com.github.javaparser.StaticJavaParser.parseStatement;
-import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.toClassOrInterfaceType;
+import static org.drools.model.codegen.execmodel.util.RuleCodegenUtils.setGeneric;
+import static org.drools.model.codegen.execmodel.util.RuleCodegenUtils.toKebabCase;
+import static org.drools.model.codegen.execmodel.util.RuleCodegenUtils.toNonPrimitiveType;
 import static org.kie.kogito.codegen.api.Generator.REST_TYPE;
-import static org.kie.kogito.codegen.rules.IncrementalRuleCodegen.TEMPLATE_RULE_FOLDER;
 
-public class QueryEndpointGenerator implements RuleFileGenerator {
+public class QueryEndpointGenerator extends AbstractQueryEntrypointGenerator {
 
-    private final RuleUnitDescription ruleUnit;
-    private final QueryModel query;
-
-    private final String name;
-    private final KogitoBuildContext context;
     private final String endpointName;
-    private final String queryClassName;
-    private final String targetClassName;
-    private final TemplatedGenerator generator;
 
-    public QueryEndpointGenerator(RuleUnitDescription ruleUnit,
-            QueryModel query,
-            KogitoBuildContext context) {
-        this.ruleUnit = ruleUnit;
-        this.query = query;
-        this.name = toCamelCase(query.getName());
-        this.context = context;
-        this.endpointName = toKebabCase(name);
-
-        this.queryClassName = ruleUnit.getSimpleName() + "Query" + name;
-        this.targetClassName = queryClassName + "Endpoint";
-        this.generator = TemplatedGenerator.builder()
-                .withPackageName(query.getNamespace())
-                .withTemplateBasePath(TEMPLATE_RULE_FOLDER)
-                .withTargetTypeName(targetClassName)
-                .withFallbackContext(JavaKogitoBuildContext.CONTEXT_NAME)
-                .build(context, "RestQuery");
-    }
-
-    public QueryGenerator getQueryGenerator() {
-        return new QueryGenerator(context, ruleUnit, query, name);
-    }
-
-    @Override
-    public String generatedFilePath() {
-        return generator.generatedFilePath();
-    }
-
-    @Override
-    public boolean validate() {
-        return !query.getBindings().isEmpty();
-    }
-
-    @Override
-    public DroolsError getError() {
-        if (query.getBindings().isEmpty()) {
-            return new NoBindingQuery(query);
-        }
-        return null;
-    }
-
-    public static class NoBindingQuery extends DroolsError {
-
-        private static final int[] ERROR_LINES = new int[0];
-
-        private final QueryModel query;
-
-        public NoBindingQuery(QueryModel query) {
-            this.query = query;
-        }
-
-        @Override
-        public String getMessage() {
-            return "Query " + query.getName() + " has no bound variable. At least one binding is required to determine the value returned by this query";
-        }
-
-        @Override
-        public int[] getLines() {
-            return ERROR_LINES;
-        }
+    public QueryEndpointGenerator(QueryGenerator queryGenerator) {
+        super(queryGenerator, "Endpoint", "RestQuery");
+        this.endpointName = toKebabCase(queryName);
     }
 
     @Override
     public GeneratedFile generate() {
         CompilationUnit cu = generator.compilationUnitOrThrow("Could not create CompilationUnit");
-        cu.setPackageDeclaration(query.getNamespace());
+        cu.setPackageDeclaration(query.model().getNamespace());
 
         ClassOrInterfaceDeclaration clazz = cu
                 .findFirst(ClassOrInterfaceDeclaration.class)
@@ -149,7 +78,7 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
                 .orElseThrow(() -> new NoSuchElementException("ClassOrInterfaceDeclaration doesn't contain a field named ruleUnit!"));
         setUnitGeneric(ruleUnitDeclaration.getElementType());
 
-        String returnType = getReturnType(clazz);
+        String returnType = getReturnType();
         generateConstructors(clazz);
         generateQueryMethods(cu, clazz, returnType);
         clazz.getMembers().sort(new BodyDeclarationComparator());
@@ -190,7 +119,7 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
                 .orElseThrow(() -> new NoSuchElementException("A method declaration doesn't contain a body!"))
                 .getStatement(1);
         returnStatement.findAll(VariableDeclarator.class).forEach(decl -> setGeneric(decl.getType(), returnType));
-        returnStatement.findAll(ClassExpr.class).forEach(expr -> expr.setType(queryClassName));
+        returnStatement.findAll(MethodCallExpr.class).forEach(expr -> expr.setScope(new NameExpr(queryClassName)));
 
         MethodDeclaration queryMethodSingle = clazz.getMethodsByName("executeQueryFirst").get(0);
         queryMethodSingle.getParameter(0).setType(ruleUnit.getCanonicalName() + (hasDI ? "" : "DTO"));
@@ -209,12 +138,16 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
         returnMethodSingle.findAll(VariableDeclarator.class).forEach(decl -> decl.setType(toNonPrimitiveType(returnType)));
 
         if (context.getAddonsConfig().useMonitoring()) {
-            addMonitoringToResource(cu, new MethodDeclaration[] { queryMethod, queryMethodSingle }, endpointName);
+            addMonitoringToResource(cu, clazz, new MethodDeclaration[] { queryMethod, queryMethodSingle }, endpointName);
         }
     }
 
-    private void addMonitoringToResource(CompilationUnit cu, MethodDeclaration[] methods, String nameURL) {
-        cu.addImport(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.SystemMetricsCollector"), false, false));
+    private void addMonitoringToResource(CompilationUnit cu, ClassOrInterfaceDeclaration clazz, MethodDeclaration[] methods, String nameURL) {
+        cu.getImports().add(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.SystemMetricsCollectorProvider"), false, false));
+        FieldDeclaration field = clazz.addField("SystemMetricsCollectorProvider", "systemMetricsCollectorProvider");
+        if (context.hasDI()) {
+            context.getDependencyInjectionAnnotator().withInjection(field);
+        }
 
         for (MethodDeclaration md : methods) {
             BlockStmt body = md.getBody().orElseThrow(() -> new NoSuchElementException("A method declaration doesn't contain a body!"));
@@ -229,7 +162,7 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
                     endpoint += path.get();
                 }
             }
-            statements.addBefore(parseStatement("SystemMetricsCollector.registerElapsedTimeSampleMetrics(\"" + endpoint + "\", endTime - startTime);"), returnStmt);
+            statements.addBefore(parseStatement("systemMetricsCollectorProvider.get().registerElapsedTimeSampleMetrics(\"" + endpoint + "\", endTime - startTime);"), returnStmt);
             md.setBody(wrapBodyAddingExceptionLogging(body, nameURL));
         }
     }
@@ -243,7 +176,7 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
         BlockStmt cb = new BlockStmt();
         cb.addStatement(parseStatement(
                 String.format(
-                        "SystemMetricsCollector.registerException(\"%s\", %s.getStackTrace()[0].toString());",
+                        "systemMetricsCollectorProvider.get().registerException(\"%s\", %s.getStackTrace()[0].toString());",
                         nameURL,
                         exceptionName)));
         cb.addStatement(new ThrowStmt(new NameExpr(exceptionName)));
@@ -252,9 +185,9 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
         return new BlockStmt(new NodeList<>(ts));
     }
 
-    private String getReturnType(ClassOrInterfaceDeclaration clazz) {
-        if (query.getBindings().size() == 1) {
-            Map.Entry<String, Class<?>> binding = query.getBindings().entrySet().iterator().next();
+    private String getReturnType() {
+        if (query.model().getBindings().size() == 1) {
+            Map.Entry<String, Class<?>> binding = query.model().getBindings().entrySet().iterator().next();
             return binding.getValue().getCanonicalName();
         }
         return queryClassName + ".Result";
@@ -262,54 +195,14 @@ public class QueryEndpointGenerator implements RuleFileGenerator {
 
     private void interpolateStrings(StringLiteralExpr vv) {
         String interpolated = vv.getValue()
-                .replace("$name$", name)
+                .replace("$name$", queryName)
                 .replace("$endpointName$", endpointName)
-                .replace("$queryName$", query.getName())
+                .replace("$queryName$", query.model().getName())
                 .replace("$prometheusName$", endpointName);
         vv.setString(interpolated);
     }
 
     private void setUnitGeneric(Type type) {
         setGeneric(type, ruleUnit);
-    }
-
-    static void setGeneric(Type type, RuleUnitDescription ruleUnit) {
-        type.asClassOrInterfaceType().setTypeArguments(toClassOrInterfaceType(ruleUnit.getCanonicalName()));
-    }
-
-    static void setGeneric(Type type, String typeArgument) {
-        type.asClassOrInterfaceType().setTypeArguments(parseClassOrInterfaceType(toNonPrimitiveType(typeArgument)));
-    }
-
-    private static String toNonPrimitiveType(String type) {
-        switch (type) {
-            case "int":
-                return "Integer";
-            case "long":
-                return "Long";
-            case "double":
-                return "Double";
-            case "float":
-                return "Float";
-            case "short":
-                return "Short";
-            case "byte":
-                return "Byte";
-            case "char":
-                return "Character";
-            case "boolean":
-                return "Boolean";
-        }
-        return type;
-    }
-
-    private static String toCamelCase(String inputString) {
-        return Stream.of(inputString.split(" "))
-                .map(s -> s.length() > 1 ? s.substring(0, 1).toUpperCase() + s.substring(1) : s.substring(0, 1).toUpperCase())
-                .collect(Collectors.joining());
-    }
-
-    private static String toKebabCase(String inputString) {
-        return inputString.replaceAll("(.)(\\p{Upper})", "$1-$2").toLowerCase();
     }
 }

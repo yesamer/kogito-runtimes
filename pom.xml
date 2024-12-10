@@ -1,18 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Licensed to the Apache Software Foundation (ASF) under one
+  ~ or more contributor license agreements.  See the NOTICE file
+  ~ distributed with this work for additional information
+  ~ regarding copyright ownership.  The ASF licenses this file
+  ~ to you under the Apache License, Version 2.0 (the
+  ~ "License"); you may not use this file except in compliance
+  ~ with the License.  You may obtain a copy of the License at
+  ~
+  ~   http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing,
+  ~ software distributed under the License is distributed on an
+  ~ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  ~ KIND, either express or implied.  See the License for the
+  ~ specific language governing permissions and limitations
+  ~ under the License.
+  -->
+
 <project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 
   <parent>
-    <groupId>org.jboss</groupId>
-    <artifactId>jboss-parent</artifactId>
-    <version>36</version>
-    <relativePath/>
+    <groupId>org.apache</groupId>
+    <artifactId>apache</artifactId>
+    <version>32</version>
   </parent>
 
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.kie.kogito</groupId>
   <artifactId>kogito-runtimes</artifactId>
-  <version>2.0.0-SNAPSHOT</version>
+  <version>999-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Kogito Runtimes</name>
@@ -21,8 +39,8 @@
   <url>http://kogito.kie.org</url>
   <inceptionYear>2019</inceptionYear>
   <organization>
-    <name>JBoss by Red Hat</name>
-    <url>http://www.jboss.org/</url>
+    <name>The Apache Software Foundation</name>
+    <url>https://apache.org/</url>
   </organization>
 
   <licenses>
@@ -34,17 +52,44 @@
   </licenses>
 
   <scm>
-    <connection>scm:git:https://github.com/kiegroup/kogito-runtimes.git</connection>
-    <developerConnection>scm:git:git@github.com:kiegroup/kogito-runtimes.git</developerConnection>
-    <url>https://github.com/kiegroup/kogito-runtimes</url>
+    <connection>scm:git:https://github.com/apache/incubator-kie-kogito-runtimes.git</connection>
+    <developerConnection>scm:git:https://github.com/apache/incubator-kie-kogito-runtimes.git</developerConnection>
+    <url>https://github.com/apache/incubator-kie-kogito-runtimes</url>
   </scm>
 
   <developers>
     <developer>
-      <name>All developers are listed in the KIE GitHub organization</name>
-      <url>https://github.com/orgs/kiegroup/people</url>
+      <name>The Apache KIE Team</name>
+      <email>dev@kie.apache.org</email>
+      <url>https://kie.apache.org</url>
+      <organization>Apache Software Foundation</organization>
+      <organizationUrl>http://apache.org/</organizationUrl>
     </developer>
   </developers>
+
+  <mailingLists>
+    <mailingList>
+      <name>Development List</name>
+      <subscribe>dev-subscribe@kie.apache.org</subscribe>
+      <unsubscribe>dev-unsubscribe@kie.apache.org</unsubscribe>
+      <post>dev@kie.apache.org</post>
+      <archive>https://lists.apache.org/list.html?dev@kie.apache.org</archive>
+    </mailingList>
+    <mailingList>
+      <name>User List</name>
+      <subscribe>users-subscribe@kie.apache.org</subscribe>
+      <unsubscribe>users-unsubscribe@kie.apache.org</unsubscribe>
+      <post>users@kie.apache.org</post>
+      <archive>https://lists.apache.org/list.html?users@kie.apache.org</archive>
+    </mailingList>
+    <mailingList>
+      <name>Commits List</name>
+      <subscribe>commits-subscribe@kie.apache.org</subscribe>
+      <unsubscribe>commits-unsubscribe@kie.apache.org</unsubscribe>
+      <post>commits@kie.apache.org</post>
+      <archive>https://lists.apache.org/list.html?commits@kie.apache.org</archive>
+    </mailingList>
+  </mailingLists>
 
   <!--
       CONVENTIONS:
@@ -53,100 +98,42 @@
   -->
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.build.outputTimestamp>2024-01-16T00:00:00Z</project.build.outputTimestamp>
+    <version.maven.artifact.plugin>3.4.1</version.maven.artifact.plugin>
+    <version.maven-javadoc-plugin>3.6.2</version.maven-javadoc-plugin>
   </properties>
 
-  <!-- distributionManagement section -->
-  <distributionManagement>
-    <repository>
-      <id>jboss-releases-repository</id>
-      <name>JBoss Releases Repository</name>
-      <url>https://repository.jboss.org/nexus/service/local/staging/deploy/maven2/</url>
-    </repository>
-    <snapshotRepository>
-      <id>jboss-snapshots-repository</id>
-      <name>JBoss Snapshot Repository</name>
-      <url>https://repository.jboss.org/nexus/content/repositories/snapshots/</url>
-    </snapshotRepository>
-  </distributionManagement>
-
-  <repositories>
-    <!-- Bootstrap repository to locate the parent pom when the parent pom
-      has not been build locally. -->
-    <repository>
-      <id>jboss-public-repository-group</id>
-      <name>JBoss Public Repository Group</name>
-      <url>https://repository.jboss.org/nexus/content/groups/public/</url>
-      <layout>default</layout>
-      <releases>
-        <enabled>true</enabled>
-        <updatePolicy>never</updatePolicy>
-      </releases>
-      <snapshots>
-        <enabled>true</enabled>
-        <updatePolicy>daily</updatePolicy>
-      </snapshots>
-    </repository>
-  </repositories>
-
-  <pluginRepositories>
-    <pluginRepository>
-      <!-- Duplicating the Maven Central repository here (as it is already coming from Super POM) makes the build much faster,
-           as the Maven Central is now treated as the first (default) repository (because it is before the JBoss.org one).
-           Artifacts with release (fixed) versions are being downloaded primarily from there. Without the central being the
-           first repository the JBoss.org Nexus would be contacted first and since it is quite slow it slows down the build.
-           We use JBoss.org repo only to download our SNAPSHOTs. -->
-      <id>central</id>
-      <name>Central Repository</name>
-      <url>https://repo.maven.apache.org/maven2</url>
-      <layout>default</layout>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </pluginRepository>
-    <pluginRepository>
-      <id>jboss-public-repository-group</id>
-      <name>JBoss Public Repository Group</name>
-      <url>https://repository.jboss.org/nexus/content/groups/public/</url>
-      <releases>
-        <enabled>true</enabled>
-      </releases>
-      <snapshots>
-        <enabled>true</enabled>
-      </snapshots>
-    </pluginRepository>
-  </pluginRepositories>
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-artifact-plugin</artifactId>
+          <version>${version.maven.artifact.plugin}</version>
+          <configuration>
+            <outputTimestamp>${project.build.outputTimestamp}</outputTimestamp>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
 
   <modules>
     <module>kogito-build</module>
     <module>kogito-bom</module>
-    <module>kogito-test-utils</module>
     <module>api</module>
     <module>drools</module>
     <module>jbpm</module>
     <module>kogito-codegen-modules</module>
-    <module>kogito-springboot</module>
-    <module>kogito-maven-plugin</module>
-    <module>kogito-quarkus-parent</module>
-    <module>archetypes</module>
+    <module>kogito-test-utils</module>
+    <module>quarkus</module>
     <module>grafana-api</module>
     <module>addons</module>
     <module>kogito-workitems</module>
+    <module>kogito-serverless-workflow</module>
+    <module>kogito-maven-plugin</module>
+    <module>springboot</module>
+    <module>kogito-maven-plugin-test</module>
   </modules>
-
-  <profiles>
-    <profile>
-      <id>default</id>
-      <activation>
-        <property>
-            <name>!productized</name>
-        </property>
-      </activation>
-      <modules>
-        <module>kogito-cloud-services</module>
-        <module>integration-tests</module>
-      </modules>
-    </profile>
-  </profiles>
-
 
 </project>

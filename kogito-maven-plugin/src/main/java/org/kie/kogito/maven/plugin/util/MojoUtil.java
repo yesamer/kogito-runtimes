@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.maven.plugin.util;
 
@@ -31,16 +34,20 @@ import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.artifact.resolver.filter.CumulativeScopeArtifactFilter;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
-import org.drools.compiler.builder.impl.KogitoKieModuleModelImpl;
 import org.drools.compiler.kie.builder.impl.InternalKieModule;
 import org.drools.compiler.kie.builder.impl.ZipKieModule;
-import org.drools.compiler.kproject.ReleaseIdImpl;
+import org.drools.compiler.kproject.models.KieModuleModelImpl;
 import org.kie.api.builder.ReleaseId;
 import org.kie.api.builder.model.KieModuleModel;
+import org.kie.util.maven.support.ReleaseIdImpl;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.drools.compiler.kie.builder.impl.KieBuilderImpl.setDefaultsforEmptyKieModule;
 
 public final class MojoUtil {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(MojoUtil.class);
 
     public static Set<URL> getProjectFiles(final MavenProject mavenProject,
             final List<InternalKieModule> kmoduleDeps)
@@ -66,8 +73,9 @@ public final class MojoUtil {
         try {
             final Set<URL> urls = getProjectFiles(mavenProject, kmoduleDeps);
             urls.add(outputDirectory.toURI().toURL());
-
-            return URLClassLoader.newInstance(urls.toArray(new URL[0]), parentClassLoader);
+            URL[] urlArray = urls.toArray(new URL[urls.size()]);
+            LOGGER.debug("Creating maven project class loading with: {}", Arrays.asList(urlArray));
+            return URLClassLoader.newInstance(urlArray, parentClassLoader);
         } catch (final DependencyResolutionRequiredException | IOException e) {
             throw new MojoExecutionException("Error setting up Kie ClassLoader", e);
         }
@@ -89,9 +97,9 @@ public final class MojoUtil {
 
     private static KieModuleModel getDependencyKieModel(final File jar) throws IOException {
         try (final ZipFile zipFile = new ZipFile(jar)) {
-            final ZipEntry zipEntry = zipFile.getEntry(KogitoKieModuleModelImpl.KMODULE_JAR_PATH);
+            final ZipEntry zipEntry = zipFile.getEntry(KieModuleModelImpl.KMODULE_JAR_PATH.asString());
             if (zipEntry != null) {
-                final KieModuleModel kieModuleModel = KogitoKieModuleModelImpl.fromXML(zipFile.getInputStream(zipEntry));
+                final KieModuleModel kieModuleModel = KieModuleModelImpl.fromXML(zipFile.getInputStream(zipEntry));
                 setDefaultsforEmptyKieModule(kieModuleModel);
                 return kieModuleModel;
             }

@@ -1,25 +1,30 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.instance.node;
 
-import org.drools.core.common.KogitoInternalAgenda;
-import org.drools.core.spi.Activation;
+import java.util.Collection;
+
+import org.drools.core.common.InternalAgenda;
+import org.drools.core.rule.consequence.InternalMatch;
 import org.jbpm.workflow.core.Constraint;
+import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.impl.ExtendedNodeImpl;
-import org.jbpm.workflow.core.impl.NodeImpl;
 import org.jbpm.workflow.core.node.StateNode;
 import org.jbpm.workflow.instance.NodeInstanceContainer;
 import org.kie.api.definition.process.Connection;
@@ -46,18 +51,24 @@ public class StateNodeInstance extends CompositeContextNodeInstance implements E
         StateNode stateNode = getStateNode();
         Connection selected = null;
         int priority = Integer.MAX_VALUE;
-        for (Connection connection : stateNode.getOutgoingConnections(NodeImpl.CONNECTION_DEFAULT_TYPE)) {
-            Constraint constraint = stateNode.getConstraint(connection);
-            if (constraint != null && constraint.getPriority() < priority) {
-                String rule = "RuleFlowStateNode-" + getProcessInstance().getProcessId() + "-" +
-                        getStateNode().getUniqueId() + "-" +
-                        connection.getTo().getId() + "-" +
-                        connection.getToType();
-                boolean isActive = ((KogitoInternalAgenda) getProcessInstance().getKnowledgeRuntime().getAgenda())
-                        .isRuleActiveInRuleFlowGroup("DROOLS_SYSTEM", rule, getProcessInstance().getStringId());
-                if (isActive) {
-                    selected = connection;
-                    priority = constraint.getPriority();
+        for (Connection connection : stateNode.getOutgoingConnections(Node.CONNECTION_DEFAULT_TYPE)) {
+
+            Collection<Constraint> constraints = stateNode.getConstraints(connection);
+
+            if (constraints != null) {
+                for (Constraint constraint : constraints) {
+                    if (constraint.getPriority() < priority) {
+                        String rule = "RuleFlowStateNode-" + getProcessInstance().getProcessId() + "-" +
+                                getStateNode().getUniqueId() + "-" +
+                                connection.getTo().getId() + "-" +
+                                connection.getToType();
+                        boolean isActive = ((InternalAgenda) getProcessInstance().getKnowledgeRuntime().getAgenda())
+                                .isRuleActiveInRuleFlowGroup("DROOLS_SYSTEM", rule, getProcessInstance().getStringId());
+                        if (isActive) {
+                            selected = connection;
+                            priority = constraint.getPriority();
+                        }
+                    }
                 }
             }
         }
@@ -68,25 +79,33 @@ public class StateNodeInstance extends CompositeContextNodeInstance implements E
             addTriggerListener();
             addActivationListener();
         }
+
     }
 
+    @Override
     protected boolean isLinkedIncomingNodeRequired() {
         return false;
     }
 
+    @Override
     public void signalEvent(String type, Object event) {
         if ("signal".equals(type)) {
             if (event instanceof String) {
-                for (Connection connection : getStateNode().getOutgoingConnections(NodeImpl.CONNECTION_DEFAULT_TYPE)) {
+                for (Connection connection : getStateNode().getOutgoingConnections(Node.CONNECTION_DEFAULT_TYPE)) {
                     boolean selected = false;
-                    Constraint constraint = getStateNode().getConstraint(connection);
-                    if (constraint == null) {
-                        if (((String) event).equals(connection.getTo().getName())) {
+                    Collection<Constraint> constraints = getStateNode().getConstraints(connection);
+                    if (constraints == null) {
+                        if (event.equals(connection.getTo().getName())) {
                             selected = true;
                         }
-                    } else if (((String) event).equals(constraint.getName())) {
-                        selected = true;
-                    }
+                    } else
+                        for (Constraint constraint : constraints) {
+
+                            if (event.equals(constraint.getName())) {
+                                selected = true;
+                                break;
+                            }
+                        }
                     if (selected) {
                         triggerEvent(ExtendedNodeImpl.EVENT_NODE_EXIT);
                         removeEventListeners();
@@ -114,18 +133,21 @@ public class StateNodeInstance extends CompositeContextNodeInstance implements E
         getProcessInstance().addEventListener(getActivationEventType(), this, true);
     }
 
+    @Override
     public void addEventListeners() {
         super.addEventListeners();
         addTriggerListener();
         addActivationListener();
     }
 
+    @Override
     public void removeEventListeners() {
         super.removeEventListeners();
         getProcessInstance().removeEventListener("signal", this, false);
         getProcessInstance().removeEventListener(getActivationEventType(), this, true);
     }
 
+    @Override
     public String[] getEventTypes() {
         return new String[] { "signal", getActivationEventType() };
     }
@@ -137,15 +159,16 @@ public class StateNodeInstance extends CompositeContextNodeInstance implements E
 
     public void activationCreated(MatchCreatedEvent event) {
         Connection selected = null;
-        for (Connection connection : getNode().getOutgoingConnections(NodeImpl.CONNECTION_DEFAULT_TYPE)) {
-            Constraint constraint = getStateNode().getConstraint(connection);
-            if (constraint != null) {
+        for (Connection connection : getNode().getOutgoingConnections(Node.CONNECTION_DEFAULT_TYPE)) {
+            Collection<Constraint> constraints = getStateNode().getConstraints(connection);
+            if (constraints != null) {
                 String constraintName = getActivationEventType() + "-"
-                        + connection.getTo().getId() + "-" + connection.getToType();
+                        + connection.getTo().getId().toExternalFormat() + "-" + connection.getToType();
                 if (constraintName.equals(event.getMatch().getRule().getName())
-                        && checkProcessInstance((Activation) event.getMatch())) {
+                        && checkProcessInstance((InternalMatch) event.getMatch())) {
                     selected = connection;
                 }
+
             }
         }
         if (selected != null) {

@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.persistence.proto;
 
@@ -19,119 +22,65 @@ import java.beans.BeanInfo;
 import java.beans.IntrospectionException;
 import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
-import java.util.Objects;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
+import org.drools.codegen.common.GeneratedFile;
 import org.infinispan.protostream.annotations.ProtoEnumValue;
+import org.kie.kogito.Model;
 import org.kie.kogito.codegen.Generated;
 import org.kie.kogito.codegen.VariableInfo;
-import org.kie.kogito.codegen.api.GeneratedFile;
+import org.kie.kogito.codegen.process.persistence.ExclusionTypeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static java.util.stream.Collectors.toSet;
+import static java.lang.String.format;
 
 public class ReflectionProtoGenerator extends AbstractProtoGenerator<Class<?>> {
 
-    private ReflectionProtoGenerator(Class<?> persistenceClass, Collection<Class<?>> modelClasses, Collection<Class<?>> dataClasses) {
-        super(persistenceClass, modelClasses, dataClasses);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReflectionProtoGenerator.class);
+
+    private ReflectionProtoGenerator(Collection<Class<?>> modelClasses, Collection<Class<?>> dataClasses) {
+        super(modelClasses, dataClasses);
     }
 
     @Override
-    public Proto protoOfDataClasses(String packageName, String... headers) {
-        try {
-            Proto proto = new Proto(packageName, headers);
-            for (Class<?> clazz : dataClasses) {
-                if (clazz.isEnum()) {
-                    enumFromClass(proto, clazz, null);
-                } else {
-                    messageFromClass(proto, clazz, null, null, null);
-                }
-            }
-            return proto;
-        } catch (Exception e) {
-            throw new RuntimeException("Error while generating proto for data model", e);
-        }
+    protected boolean isEnum(Class<?> dataModel) {
+        return dataModel.isEnum();
     }
 
     @Override
-    public Proto generate(String messageComment, String fieldComment, String packageName, Class<?> dataModel, String... headers) {
-        try {
-            Proto proto = new Proto(packageName, headers);
-            if (dataModel.isEnum()) {
-                enumFromClass(proto, dataModel, null);
-            } else {
-                messageFromClass(proto, dataModel, packageName, messageComment, fieldComment);
-            }
-            return proto;
-        } catch (Exception e) {
-            throw new RuntimeException("Error while generating proto for model class " + dataModel, e);
+    protected ProtoMessage messageFromClass(Proto proto, Set<String> alreadyGenerated, Class<?> clazz, String messageComment, String fieldComment) throws Exception {
+
+        if (!shouldGenerateProto(clazz)) {
+            LOGGER.info("Skipping generating reflection proto for class {}", clazz);
+            return null;
         }
-    }
+        LOGGER.debug("Generating reflection proto for class {}", clazz);
 
-    @Override
-    public Collection<String> getPersistenceClassParams() {
-        if (persistenceClass != null) {
-            Class[] types = Arrays.stream(persistenceClass.getConstructors())
-                    .filter(c -> c.getParameterTypes().length > 0)
-                    .map(Constructor::getParameterTypes)
-                    .findFirst()
-                    .orElse(new Class[0]);
-            return Arrays.stream(types)
-                    .map(Class::getTypeName)
-                    .collect(Collectors.toList());
-        }
-        return Collections.emptyList();
-    }
+        String clazzName = extractName(clazz).get();
+        ProtoMessage message = new ProtoMessage(clazzName, clazz.getPackage().getName());
+        Predicate<PropertyDescriptor> validPropertyFilter = property -> this.isValidProperty(clazz, property);
+        List<PropertyDescriptor> propertiesDescriptor = List.of(Introspector.getBeanInfo(clazz).getPropertyDescriptors()).stream().filter(validPropertyFilter).toList();
+        for (PropertyDescriptor pd : propertiesDescriptor) {
 
-    @Override
-    public Set<String> getProcessIds() {
-        return modelClasses.stream().map(c -> {
-            Generated generated = c.getAnnotation(Generated.class);
-            return generated == null ? null : generated.reference();
-        }).filter(Objects::nonNull).collect(toSet());
-    }
+            Field propertyField = getFieldFromClass(clazz, pd.getName());
 
-    protected ProtoMessage messageFromClass(Proto proto, Class<?> clazz, String packageName, String messageComment, String fieldComment) throws Exception {
-        BeanInfo beanInfo = Introspector.getBeanInfo(clazz);
-        String name = beanInfo.getBeanDescriptor().getBeanClass().getSimpleName();
+            // By default, only index id field from Model generated class
+            String completeFieldComment = "id".equals(pd.getName()) && Model.class.isAssignableFrom(clazz) ? fieldComment.replace("Index.NO", "Index.YES") : fieldComment;
 
-        Generated generatedData = clazz.getAnnotation(Generated.class);
-        if (generatedData != null) {
-            name = generatedData.name().isEmpty() ? name : generatedData.name();
-            if (generatedData.hidden()) {
-                // since class is marked as hidden skip processing of that class
-                return null;
-            }
-        }
-
-        ProtoMessage message = new ProtoMessage(name, packageName == null ? clazz.getPackage().getName() : packageName);
-
-        for (PropertyDescriptor pd : beanInfo.getPropertyDescriptors()) {
-            String completeFieldComment = fieldComment;
-            if (pd.getName().equals("class")) {
-                continue;
-            }
-            // ignore static and/or transient fields
-            int mod = clazz.getDeclaredField(pd.getName()).getModifiers();
-            if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) {
-                continue;
-            }
-
-            VariableInfo varInfo = clazz.getDeclaredField(pd.getName()).getAnnotation(VariableInfo.class);
+            VariableInfo varInfo = propertyField.getAnnotation(VariableInfo.class);
             if (varInfo != null) {
                 completeFieldComment = fieldComment + "\n @VariableInfo(tags=\"" + varInfo.tags() + "\")";
             }
@@ -139,72 +88,123 @@ public class ReflectionProtoGenerator extends AbstractProtoGenerator<Class<?>> {
             String fieldTypeString = pd.getPropertyType().getCanonicalName();
             Class<?> fieldType = pd.getPropertyType();
             String protoType;
-            if (Collection.class.isAssignableFrom(pd.getPropertyType())) {
-                fieldTypeString = "Collection";
-                Field f = clazz.getDeclaredField(pd.getName());
-                Type type = f.getGenericType();
+            if (pd.getPropertyType().isArray() && !pd.getPropertyType().getComponentType().isPrimitive()) {
+                fieldTypeString = ARRAY;
+                fieldType = pd.getPropertyType().getComponentType();
+                protoType = protoType(fieldType.getCanonicalName());
+            } else if (Collection.class.isAssignableFrom(pd.getPropertyType())) {
+                fieldTypeString = COLLECTION;
+                Type type = propertyField.getGenericType();
                 if (type instanceof ParameterizedType) {
                     ParameterizedType ptype = (ParameterizedType) type;
                     fieldType = (Class<?>) ptype.getActualTypeArguments()[0];
                     protoType = protoType(fieldType.getCanonicalName());
                 } else {
-                    throw new IllegalArgumentException("Field " + f.getName() + " of class " + clazz + " uses collection without type information");
+                    throw new IllegalArgumentException("Field " + propertyField.getName() + " of class " + clazz.getName() + " uses collection without type information");
                 }
             } else {
                 protoType = protoType(fieldTypeString);
             }
 
             if (protoType == null) {
-                if (fieldType.isEnum()) {
-                    protoType = enumFromClass(proto, fieldType, packageName).getName();
-                } else {
-                    protoType = messageFromClass(proto, fieldType, packageName, messageComment, fieldComment).getName();
+
+                // recursive call to visit the type
+                Optional<String> optionalProtoType = internalGenerate(proto, alreadyGenerated, messageComment, fieldComment, fieldType);
+                if (!optionalProtoType.isPresent()) {
+                    return message;
                 }
+
+                protoType = optionalProtoType.get();
             }
 
-            message.addField(applicabilityByType(fieldTypeString), protoType, pd.getName()).setComment(completeFieldComment);
+            ProtoField protoField = message.addField(computeCardinalityModifier(fieldTypeString), protoType, pd.getName());
+            protoField.setComment(completeFieldComment);
+            if (KOGITO_SERIALIZABLE.equals(protoType)) {
+                protoField.setOption(format("[(%s) = \"%s\"]", KOGITO_JAVA_CLASS_OPTION, pd.getPropertyType().getCanonicalName()));
+            }
         }
         message.setComment(messageComment);
         proto.addMessage(message);
         return message;
     }
 
-    protected ProtoEnum enumFromClass(Proto proto, Class<?> clazz, String packageName) throws IntrospectionException {
-        BeanInfo beanInfo = Introspector.getBeanInfo(clazz);
-        String name = beanInfo.getBeanDescriptor().getBeanClass().getSimpleName();
+    protected boolean shouldGenerateProto(Class<?> clazz) {
+        return extractName(clazz).isPresent();
+    }
 
-        Generated generatedData = clazz.getAnnotation(Generated.class);
-        if (generatedData != null) {
-            name = generatedData.name().isEmpty() ? name : generatedData.name();
-            if (generatedData.hidden()) {
-                // since class is marked as hidden skip processing of that class
-                return null;
+    @Override
+    protected Optional<String> extractName(Class<?> clazz) {
+        try {
+            // builtins should not generate proto files
+            BeanInfo beanInfo = Introspector.getBeanInfo(clazz);
+            String name = beanInfo.getBeanDescriptor().getBeanClass().getSimpleName();
+
+            Predicate<String> typeExclusions = ExclusionTypeUtils.createTypeExclusions();
+            if (typeExclusions.test(clazz.getCanonicalName())) {
+                return Optional.empty();
             }
+            Generated generatedData = clazz.getAnnotation(Generated.class);
+            if (generatedData != null) {
+                name = generatedData.name().isEmpty() ? name : generatedData.name();
+                if (generatedData.hidden()) {
+                    // since class is marked as hidden skip processing of that class
+                    return Optional.empty();
+                }
+            }
+            return Optional.of(name);
+        } catch (IntrospectionException e) {
+            throw new RuntimeException(e);
         }
 
-        ProtoEnum modelEnum = new ProtoEnum(name, packageName == null ? clazz.getPackage().getName() : packageName);
-        Stream.of(clazz.getDeclaredFields())
-                .filter(f -> !f.getName().startsWith("$"))
-                .forEach(f -> addEnumField(f, modelEnum));
-        proto.addEnum(modelEnum);
-        return modelEnum;
+    }
+
+    @Override
+    protected String modelClassName(Class<?> dataModel) {
+        return dataModel.getName();
+    }
+
+    private Field getFieldFromClass(Class<?> clazz, String name) {
+        try {
+            return clazz.getDeclaredField(name);
+        } catch (Exception e) {
+            if (clazz.getSuperclass() != null && !clazz.getSuperclass().equals(Object.class)) {
+                return getFieldFromClass(clazz.getSuperclass(), name);
+            } else {
+                throw new IllegalArgumentException("Impossible to find field " + name + " in class " + clazz.getName());
+            }
+        }
+    }
+
+    @Override
+    protected ProtoEnum enumFromClass(Proto proto, Class<?> clazz) throws Exception {
+        try {
+            return extractName(clazz)
+                    .map(name -> {
+                        ProtoEnum modelEnum = new ProtoEnum(name, clazz.getPackage().getName());
+                        Stream.of(clazz.getDeclaredFields())
+                                .filter(Field::isEnumConstant)
+                                .sorted(Comparator.comparing(Field::getName))
+                                .forEach(f -> addEnumField(f, modelEnum));
+                        proto.addEnum(modelEnum);
+                        return modelEnum;
+                    }).orElse(null);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Malformed class " + clazz.getName() + " " + e.getMessage(), e);
+        }
     }
 
     private void addEnumField(Field field, ProtoEnum pEnum) {
         ProtoEnumValue protoEnumValue = field.getAnnotation(ProtoEnumValue.class);
         Integer ordinal = null;
+        boolean sortedWithAnnotation = false;
         if (protoEnumValue != null) {
+            sortedWithAnnotation = true;
             ordinal = protoEnumValue.number();
         }
         if (ordinal == null) {
-            ordinal = pEnum.getFields()
-                    .values()
-                    .stream()
-                    .mapToInt(Integer::intValue)
-                    .max()
-                    .orElse(-1) + 1;
+            ordinal = Enum.valueOf((Class<Enum>) field.getType(), field.getName()).ordinal();
         }
-        pEnum.addField(field.getName(), ordinal);
+        pEnum.addField(field.getName(), ordinal, sortedWithAnnotation);
     }
 
     @Override
@@ -248,7 +248,7 @@ public class ReflectionProtoGenerator extends AbstractProtoGenerator<Class<?>> {
         @Override
         protected Collection<Class<?>> extractDataClasses(Collection<Class<?>> modelClasses) {
             if (dataClasses != null || modelClasses == null) {
-                LOGGER.info("Using provided dataClasses instead of extracting from modelClasses");
+                LOGGER.info("Using provided dataClasses instead of extracting from modelClasses. This should happen only during tests.");
                 return dataClasses;
             }
             Set<Class<?>> dataModelClasses = new HashSet<>();
@@ -276,7 +276,30 @@ public class ReflectionProtoGenerator extends AbstractProtoGenerator<Class<?>> {
 
         @Override
         public ReflectionProtoGenerator build(Collection<Class<?>> modelClasses) {
-            return new ReflectionProtoGenerator(persistenceClass, modelClasses, extractDataClasses(modelClasses));
+            return new ReflectionProtoGenerator(modelClasses, extractDataClasses(modelClasses));
+        }
+    }
+
+    private boolean isValidProperty(Class<?> clazz, PropertyDescriptor propertyDescriptor) {
+        try {
+            if (propertyDescriptor.getName().equals("class")) {
+                return false;
+            }
+
+            Field propertyField = getFieldFromClass(clazz, propertyDescriptor.getName());
+
+            // ignore static and/or transient fields
+            int mod = propertyField.getModifiers();
+            if (Modifier.isStatic(mod) || Modifier.isTransient(mod)) {
+                return false;
+            }
+
+            return true;
+        } catch (IllegalArgumentException ex) {
+            LOGGER.warn(ex.getMessage());
+            // a method starting with get or set without a corresponding backing field makes java beans to
+            // still generate a property descriptor, it should be ignored
+            return false;
         }
     }
 }

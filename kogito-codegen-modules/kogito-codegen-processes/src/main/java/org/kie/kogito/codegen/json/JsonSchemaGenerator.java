@@ -1,57 +1,63 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.json;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.drools.codegen.common.GeneratedFile;
+import org.drools.codegen.common.GeneratedFileType;
 import org.jbpm.util.JsonSchemaUtil;
+import org.kie.kogito.ProcessInput;
 import org.kie.kogito.UserTask;
 import org.kie.kogito.UserTaskParam;
-import org.kie.kogito.codegen.api.GeneratedFile;
-import org.kie.kogito.codegen.api.GeneratedFileType;
+import org.kie.kogito.codegen.VariableInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.victools.jsonschema.generator.CustomDefinition.AttributeInclusion;
 import com.github.victools.jsonschema.generator.CustomPropertyDefinition;
 import com.github.victools.jsonschema.generator.FieldScope;
+import com.github.victools.jsonschema.generator.Option;
 import com.github.victools.jsonschema.generator.OptionPreset;
 import com.github.victools.jsonschema.generator.SchemaGenerationContext;
 import com.github.victools.jsonschema.generator.SchemaGenerator;
 import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
+import com.github.victools.jsonschema.generator.SchemaKeyword;
 import com.github.victools.jsonschema.generator.SchemaVersion;
 
 public class JsonSchemaGenerator {
 
     public static final Logger logger = LoggerFactory.getLogger(JsonSchemaGenerator.class);
-    public static final SchemaVersion DEFAULT_SCHEMA_VERSION = SchemaVersion.DRAFT_7;
-    private static final GeneratedFileType JSON_SCHEMA_TYPE = GeneratedFileType.of("JSON_SCHEMA", GeneratedFileType.Category.RESOURCE, true, true);
+    public static final SchemaVersion DEFAULT_SCHEMA_VERSION = SchemaVersion.DRAFT_2019_09;
+    private static final GeneratedFileType JSON_SCHEMA_TYPE = GeneratedFileType.of("JSON_SCHEMA", GeneratedFileType.Category.INTERNAL_RESOURCE, true, true);
 
     private final Map<String, List<Class<?>>> map;
     private final SchemaVersion schemaVersion;
@@ -59,8 +65,7 @@ public class JsonSchemaGenerator {
     public static class ClassBuilder {
 
         private Stream<Class<?>> stream;
-        private Function<? super Class<?>, String> getSchemaName = JsonSchemaGenerator::getKey;
-        private Predicate<? super Class<?>> shouldGenSchema = JsonSchemaGenerator::isUserTaskClass;
+        private Function<? super Class<?>, String> getSchemaName = JsonSchemaGenerator::getSchemaName;
         private SchemaVersion schemaVersion = DEFAULT_SCHEMA_VERSION;
 
         public ClassBuilder(Stream<Class<?>> stream) {
@@ -72,11 +77,6 @@ public class JsonSchemaGenerator {
             return this;
         }
 
-        public ClassBuilder withGenSchemaPredicate(Predicate<? super Class<?>> shouldGenSchema) {
-            this.shouldGenSchema = shouldGenSchema;
-            return this;
-        }
-
         public ClassBuilder withSchemaVersion(String schemaVersion) {
             this.schemaVersion = schemaVersion == null ? DEFAULT_SCHEMA_VERSION : SchemaVersion.valueOf(schemaVersion.trim().toUpperCase());
             return this;
@@ -84,21 +84,19 @@ public class JsonSchemaGenerator {
 
         public JsonSchemaGenerator build() {
             Map<String, List<Class<?>>> map = stream
-                    .filter(shouldGenSchema)
-                    .filter(this::ensureNotNull)
+                    .filter(this::ensureHasAnnotations)
                     .collect(Collectors.groupingBy(getSchemaName));
 
             return new JsonSchemaGenerator(map, schemaVersion);
         }
 
-        private boolean ensureNotNull(Class<?> c) {
-            UserTask userTask = c.getAnnotation(UserTask.class);
-            boolean isNull = userTask == null;
-            if (isNull) {
-                logger.warn("Could not retrieve UserTask annotation from class {} but was expected. " +
+        private boolean ensureHasAnnotations(Class<?> c) {
+            boolean needsJsonSchema = c.isAnnotationPresent(UserTask.class) || c.isAnnotationPresent(ProcessInput.class);
+            if (!needsJsonSchema) {
+                logger.warn("Could not retrieve neither UserTask nor Process annotation from class {} but was expected. " +
                         "This may be a class loader bug. If JsonSchemas have been generated you may ignore this message.", c);
             }
-            return !isNull;
+            return needsJsonSchema;
         }
     }
 
@@ -108,9 +106,14 @@ public class JsonSchemaGenerator {
     }
 
     public Collection<GeneratedFile> generate() throws IOException {
+
         SchemaGeneratorConfigBuilder builder = new SchemaGeneratorConfigBuilder(schemaVersion, OptionPreset.PLAIN_JSON);
-        builder.forTypesInGeneral().withStringFormatResolver(target -> target.getSimpleTypeDescription().equals("Date") ? "date-time" : null);
-        builder.forFields().withIgnoreCheck(JsonSchemaGenerator::isNotUserTaskParam).withCustomDefinitionProvider(this::getInputOutput);
+        builder.with(Option.DEFINITIONS_FOR_ALL_OBJECTS);
+        builder.forTypesInGeneral()
+                .withStringFormatResolver(target -> target.getSimpleTypeDescription().equals("Date") ? "date-time" : null);
+        builder.forFields()
+                .withIgnoreCheck(JsonSchemaGenerator::checkFields)
+                .withCustomDefinitionProvider(this::getInputOutput);
         SchemaGenerator generator = new SchemaGenerator(builder.build());
         ObjectWriter writer = new ObjectMapper().writer();
 
@@ -122,40 +125,48 @@ public class JsonSchemaGenerator {
                 if (merged == null) {
                     merged = read;
                 } else {
-                    JsonUtils.merge(read, merged);
+                    merged = (ObjectNode) JsonUtils.merge(read, merged);
                 }
             }
             try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
                 writer.writeValue(outputStream, merged);
-                files.add(new GeneratedFile(JSON_SCHEMA_TYPE, pathFor(entry.getKey()), outputStream.toByteArray()));
+                files.add(new GeneratedFile(JSON_SCHEMA_TYPE, JsonSchemaUtil.pathFor(entry.getKey()), outputStream.toByteArray()));
             }
         }
         return files;
     }
 
-    private CustomPropertyDefinition getInputOutput(FieldScope f, SchemaGenerationContext context) {
-        UserTaskParam param = f.getAnnotation(UserTaskParam.class);
-        ObjectNode objectNode = context.createDefinition(f.getDeclaredType());
+    private CustomPropertyDefinition getInputOutput(FieldScope scope, SchemaGenerationContext context) {
+        UserTaskParam param = scope.getAnnotation(UserTaskParam.class);
+
         if (param != null) {
-            objectNode.put(param.value().toString().toLowerCase(), true);
+            final ObjectNode refNode = context.createStandardDefinitionReference(scope.getDeclaredType(), null);
+
+            ObjectNode rootNode = context.getGeneratorConfig().createObjectNode();
+            ArrayNode allOfNode = rootNode.withArray(context.getKeyword(SchemaKeyword.TAG_ALLOF));
+            allOfNode.add(refNode);
+            allOfNode.addObject().put(param.value().toString().toLowerCase(), true);
+
+            return new CustomPropertyDefinition(rootNode, AttributeInclusion.YES);
         }
-        return new CustomPropertyDefinition(objectNode, AttributeInclusion.NO);
+        return null;
     }
 
-    private static String getKey(Class<?> c) {
-        UserTask userTask = c.getAnnotation(UserTask.class);
-        return JsonSchemaUtil.getJsonSchemaName(userTask.processName(), userTask.taskName());
+    private static String getSchemaName(Class<?> c) {
+        if (c.isAnnotationPresent(ProcessInput.class)) {
+            ProcessInput process = c.getAnnotation(ProcessInput.class);
+            return JsonSchemaUtil.getJsonSchemaName(process.processName());
+        }
+        if (c.isAnnotationPresent(UserTask.class)) {
+            UserTask userTask = c.getAnnotation(UserTask.class);
+            return JsonSchemaUtil.getJsonSchemaName(userTask.processName(), userTask.taskName());
+        }
+        throw new RuntimeException("Cannot create the schema name. Class must be have UserTask or ProcessInput annotation");
     }
 
-    private static boolean isUserTaskClass(Class<?> c) {
-        return c.isAnnotationPresent(UserTask.class);
+    private static boolean checkFields(FieldScope fieldScope) {
+        return (fieldScope.getDeclaringType().getErasedType().isAnnotationPresent(UserTask.class) && fieldScope.getAnnotation(UserTaskParam.class) == null)
+                || (fieldScope.getDeclaringType().getErasedType().isAnnotationPresent(ProcessInput.class) && fieldScope.getAnnotation(VariableInfo.class) == null);
     }
 
-    private static boolean isNotUserTaskParam(FieldScope fieldScope) {
-        return fieldScope.getDeclaringType().getErasedType().isAnnotationPresent(UserTask.class) && fieldScope.getAnnotation(UserTaskParam.class) == null;
-    }
-
-    private Path pathFor(String name) {
-        return JsonSchemaUtil.getJsonDir().resolve(JsonSchemaUtil.getFileName(name));
-    }
 }

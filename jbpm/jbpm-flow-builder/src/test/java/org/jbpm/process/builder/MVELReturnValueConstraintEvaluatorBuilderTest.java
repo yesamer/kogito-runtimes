@@ -1,29 +1,32 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.builder;
 
 import java.io.StringReader;
 
+import org.drools.base.definitions.InternalKnowledgePackage;
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.compiler.DialectCompiletimeRegistry;
-import org.drools.compiler.compiler.ReturnValueDescr;
 import org.drools.compiler.rule.builder.PackageBuildContext;
 import org.drools.core.common.InternalKnowledgeRuntime;
-import org.drools.core.definitions.InternalKnowledgePackage;
-import org.drools.core.definitions.impl.KnowledgePackageImpl;
+import org.drools.core.reteoo.CoreComponentFactory;
+import org.drools.drl.ast.descr.ReturnValueDescr;
 import org.drools.mvel.MVELDialectRuntimeData;
 import org.drools.mvel.builder.MVELDialect;
 import org.jbpm.process.builder.dialect.mvel.MVELReturnValueEvaluatorBuilder;
@@ -33,26 +36,26 @@ import org.jbpm.ruleflow.instance.RuleFlowProcessInstance;
 import org.jbpm.test.util.AbstractBaseTest;
 import org.jbpm.workflow.instance.node.SplitInstance;
 import org.junit.jupiter.api.Test;
+import org.kie.internal.builder.KnowledgeBuilderFactory;
 import org.kie.kogito.internal.process.runtime.KogitoProcessRuntime;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class MVELReturnValueConstraintEvaluatorBuilderTest extends AbstractBaseTest {
 
     @Test
     public void testSimpleReturnValueConstraintEvaluator() throws Exception {
-        final InternalKnowledgePackage pkg = new KnowledgePackageImpl("pkg1");
+        final InternalKnowledgePackage pkg = CoreComponentFactory.get().createKnowledgePackage("pkg1");
 
         ReturnValueDescr descr = new ReturnValueDescr();
         descr.setText("return value");
 
-        builder = new KnowledgeBuilderImpl(pkg);
+        builder = new KnowledgeBuilderImpl(pkg, KnowledgeBuilderFactory.newKnowledgeBuilderConfiguration());
         DialectCompiletimeRegistry dialectRegistry = builder.getPackageRegistry(pkg.getName()).getDialectCompiletimeRegistry();
         MVELDialect mvelDialect = (MVELDialect) dialectRegistry.getDialect("mvel");
 
         PackageBuildContext context = new PackageBuildContext();
-        context.init(builder,
+        context.initContext(builder,
                 pkg,
                 null,
                 dialectRegistry,
@@ -83,15 +86,15 @@ public class MVELReturnValueConstraintEvaluatorBuilderTest extends AbstractBaseT
 
         ((MVELReturnValueEvaluator) node.getReturnValueEvaluator()).compile(data);
 
-        assertTrue(node.evaluate(splitInstance,
+        assertThat(node.evaluate(splitInstance,
                 null,
-                null));
+                null)).isTrue();
 
         kruntime.getKieSession().setGlobal("value", false);
 
-        assertFalse(node.evaluate(splitInstance,
+        assertThat(node.evaluate(splitInstance,
                 null,
-                null));
+                null)).isFalse();
     }
 
 }

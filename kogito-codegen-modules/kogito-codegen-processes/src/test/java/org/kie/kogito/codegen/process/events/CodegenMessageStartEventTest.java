@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.process.events;
 
@@ -21,9 +24,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.drools.codegen.common.GeneratedFile;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.kie.kogito.codegen.api.GeneratedFile;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.core.io.CollectedResourceProducer;
 import org.kie.kogito.codegen.process.ProcessCodegen;
@@ -46,7 +49,7 @@ public class CodegenMessageStartEventTest {
     private static final Path MESSAGE_START_END_EVENT_SOURCE_FULL_SOURCE = BASE_PATH.resolve(MESSAGE_START_END_EVENT_SOURCE);
 
     @ParameterizedTest
-    @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#contextBuilders")
+    @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#restContextBuilders")
     public void testRESTApiForMessageStartEvent(KogitoBuildContext.Builder contextBuilder) {
 
         KogitoBuildContext context = contextBuilder.build();
@@ -61,8 +64,8 @@ public class CodegenMessageStartEventTest {
                 .filter(generatedFile -> generatedFile.relativePath().endsWith("org/kie/kogito/test/MessageStartEventResource.java"))
                 .collect(Collectors.toList());
 
-        if (context.hasREST()) {
-            assertThat(resources.size()).isEqualTo(1);
+        if (context.hasRESTForGenerator(codeGenerator)) {
+            assertThat(resources).hasSize(1);
 
             CompilationUnit parsedResource = StaticJavaParser.parse(new String(resources.get(0).contents()));
 
@@ -71,13 +74,13 @@ public class CodegenMessageStartEventTest {
                             .withFailMessage("For processes without none start event there should not be create resource method")
                             .isEmpty();
         } else {
-            assertThat(resources.size()).isZero();
+            assertThat(resources).isEmpty();
         }
 
     }
 
     @ParameterizedTest
-    @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#contextBuilders")
+    @MethodSource("org.kie.kogito.codegen.api.utils.KogitoContextTestUtils#restContextBuilders")
     public void testRESTApiForMessageEndEvent(KogitoBuildContext.Builder contextBuilder) {
 
         KogitoBuildContext context = contextBuilder.build();
@@ -92,8 +95,8 @@ public class CodegenMessageStartEventTest {
                 .filter(generatedFile -> generatedFile.relativePath().endsWith("org/kie/kogito/test/MessageStartEventResource.java"))
                 .collect(Collectors.toList());
 
-        if (context.hasREST()) {
-            assertThat(resources.size()).isEqualTo(1);
+        if (context.hasRESTForGenerator(codeGenerator)) {
+            assertThat(resources).hasSize(1);
 
             CompilationUnit parsedResource = StaticJavaParser.parse(new String(resources.get(0).contents()));
 
@@ -102,7 +105,7 @@ public class CodegenMessageStartEventTest {
                             .withFailMessage("Must have method with name 'createResource'")
                             .hasSize(1);
         } else {
-            assertThat(resources.size()).isZero();
+            assertThat(resources).isEmpty();
         }
     }
 
@@ -120,9 +123,9 @@ public class CodegenMessageStartEventTest {
 
         // class name is with suffix that represents node id as there might be multiple end message events
         List<GeneratedFile> resources = generatedFiles.stream()
-                .filter(generatedFile -> generatedFile.relativePath().endsWith("org/kie/kogito/test/MessageStartEventMessageProducer_3.java"))
+                .filter(generatedFile -> generatedFile.relativePath().endsWith("org/kie/kogito/test/MessageStartEventMessageProducer_EndEvent_1.java"))
                 .collect(Collectors.toList());
-        assertThat(resources.size()).isEqualTo(1);
+        assertThat(resources).hasSize(1);
 
         CompilationUnit parsedResource = StaticJavaParser.parse(new String(resources.get(0).contents()));
 

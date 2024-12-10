@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.core.impl;
 
@@ -20,8 +23,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.jbpm.ruleflow.core.Metadata;
+import org.jbpm.ruleflow.core.WorkflowElementIdentifierFactory;
 import org.jbpm.workflow.core.Connection;
 import org.jbpm.workflow.core.Node;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
+import org.kie.kogito.process.validation.ValidationException;
 
 /**
  * Default implementation of a connection.
@@ -35,9 +42,14 @@ public class ConnectionImpl implements Connection, Serializable {
     private org.kie.api.definition.process.Node to;
     private String fromType;
     private String toType;
-    private Map<String, Object> metaData = new HashMap<String, Object>();
+    private Map<String, Object> metaData = new HashMap<>();
 
     public ConnectionImpl() {
+    }
+
+    @Override
+    public WorkflowElementIdentifier getId() {
+        return WorkflowElementIdentifierFactory.fromExternalFormat((String) getMetaData().get(Metadata.UNIQUE_ID));
     }
 
     /**
@@ -75,8 +87,12 @@ public class ConnectionImpl implements Connection, Serializable {
     }
 
     public void connect() {
-        ((Node) this.from).addOutgoingConnection(fromType, this);
-        ((Node) this.to).addIncomingConnection(toType, this);
+        try {
+            ((Node) this.from).addOutgoingConnection(fromType, this);
+            ((Node) this.to).addIncomingConnection(toType, this);
+        } catch (Exception exception) {
+            throw new ValidationException(null, exception.getMessage());
+        }
     }
 
     public synchronized void terminate() {

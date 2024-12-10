@@ -1,68 +1,67 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.instance.node;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Optional;
-import java.util.regex.Matcher;
+import java.util.Objects;
 
-import org.drools.core.common.KogitoInternalAgenda;
-import org.drools.core.impl.StatefulKnowledgeSessionImpl;
-import org.drools.core.rule.Declaration;
-import org.drools.core.spi.Activation;
-import org.jbpm.process.core.ContextContainer;
-import org.jbpm.process.core.context.variable.Variable;
-import org.jbpm.process.core.context.variable.VariableScope;
-import org.jbpm.process.core.timer.BusinessCalendar;
+import org.drools.core.common.InternalAgenda;
+import org.drools.core.common.ReteEvaluator;
+import org.drools.core.rule.consequence.InternalMatch;
 import org.jbpm.process.core.timer.DateTimeUtils;
 import org.jbpm.process.core.timer.Timer;
 import org.jbpm.process.instance.InternalProcessRuntime;
-import org.jbpm.process.instance.ProcessInstance;
-import org.jbpm.process.instance.context.variable.VariableScopeInstance;
 import org.jbpm.process.instance.impl.Action;
-import org.jbpm.util.PatternConstants;
+import org.jbpm.ruleflow.core.Metadata;
+import org.jbpm.util.ContextFactory;
 import org.jbpm.workflow.core.DroolsAction;
+import org.jbpm.workflow.core.WorkflowProcess;
+import org.jbpm.workflow.core.impl.NodeImpl;
 import org.jbpm.workflow.core.node.StateBasedNode;
 import org.jbpm.workflow.instance.impl.ExtendedNodeInstanceImpl;
-import org.jbpm.workflow.instance.impl.MVELProcessHelper;
-import org.jbpm.workflow.instance.impl.NodeInstanceResolverFactory;
 import org.jbpm.workflow.instance.impl.WorkflowProcessInstanceImpl;
 import org.kie.api.event.rule.MatchCreatedEvent;
 import org.kie.api.runtime.KieRuntime;
-import org.kie.api.runtime.rule.Match;
+import org.kie.kogito.calendar.BusinessCalendar;
 import org.kie.kogito.internal.process.event.KogitoEventListener;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
+import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
 import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.internal.process.runtime.KogitoProcessRuntime;
 import org.kie.kogito.jobs.DurationExpirationTime;
 import org.kie.kogito.jobs.ExactExpirationTime;
 import org.kie.kogito.jobs.ExpirationTime;
 import org.kie.kogito.jobs.JobsService;
-import org.kie.kogito.jobs.ProcessInstanceJobDescription;
+import org.kie.kogito.jobs.descriptors.ProcessInstanceJobDescription;
+import org.kie.kogito.process.expr.Expression;
+import org.kie.kogito.process.expr.ExpressionHandlerFactory;
 import org.kie.kogito.timer.TimerInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.jbpm.process.core.constants.CalendarConstants.BUSINESS_CALENDAR_ENVIRONMENT_KEY;
 import static org.jbpm.workflow.core.Node.CONNECTION_DEFAULT_TYPE;
+import static org.jbpm.workflow.instance.node.TimerNodeInstance.TIMER_TRIGGERED_EVENT;
 
 public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl implements EventBasedNodeInstanceInterface, KogitoEventListener {
 
@@ -71,6 +70,10 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
     private static final Logger logger = LoggerFactory.getLogger(StateBasedNodeInstance.class);
 
     private List<String> timerInstances;
+
+    private Map<String, String> timerInstancesReference;
+
+    private transient KogitoProcessContext context;
 
     public StateBasedNode getEventBasedNode() {
         return (StateBasedNode) getNode();
@@ -88,24 +91,30 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
         if (timers != null) {
             addTimerListener();
             timerInstances = new ArrayList<>(timers.size());
+            timerInstancesReference = new HashMap<>(timers.size());
             JobsService jobService = ((KogitoProcessRuntime.Provider) getProcessInstance().getKnowledgeRuntime().getProcessRuntime()).getKogitoProcessRuntime().getJobsService();
             for (Timer timer : timers.keySet()) {
                 ProcessInstanceJobDescription jobDescription =
-                        ProcessInstanceJobDescription.of(timer.getId(),
-                                createTimerInstance(timer),
-                                getProcessInstance().getStringId(),
-                                getProcessInstance().getRootProcessInstanceId(),
-                                getProcessInstance().getProcessId(),
-                                getProcessInstance().getRootProcessId(),
-                                Optional.ofNullable(from).map(KogitoNodeInstance::getStringId).orElse(null));
-                timerInstances.add(jobService.scheduleProcessInstanceJob(jobDescription));
+                        ProcessInstanceJobDescription.newProcessInstanceJobDescriptionBuilder()
+                                .generateId()
+                                .timerId(Long.toString(timer.getId()))
+                                .expirationTime(createTimerInstance(timer))
+                                .rootProcessId(getProcessInstance().getRootProcessId())
+                                .rootProcessInstanceId(getProcessInstance().getRootProcessInstanceId())
+                                .processId(getProcessInstance().getProcessId())
+                                .processInstanceId(getProcessInstance().getStringId())
+                                .nodeInstanceId(this.getId())
+                                .build();
+                String jobId = jobService.scheduleJob(jobDescription);
+                timerInstances.add(jobId);
+                timerInstancesReference.put(jobId, Long.toString(timer.getId()));
             }
         }
 
         if (getEventBasedNode().getBoundaryEvents() != null) {
 
             for (String name : getEventBasedNode().getBoundaryEvents()) {
-                boolean isActive = ((KogitoInternalAgenda) getProcessInstance().getKnowledgeRuntime().getAgenda())
+                boolean isActive = ((InternalAgenda) getProcessInstance().getKnowledgeRuntime().getAgenda())
                         .isRuleActiveInRuleFlowGroup("DROOLS_SYSTEM", name, getProcessInstance().getId());
                 if (isActive) {
                     getProcessInstance().getKnowledgeRuntime().signalEvent(name, null);
@@ -115,14 +124,14 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
             }
         }
 
-        ((WorkflowProcessInstanceImpl) getProcessInstance()).addActivatingNodeId((String) getNode().getMetaData().get("UniqueId"));
+        ((WorkflowProcessInstanceImpl) getProcessInstance()).addActivatingNodeId((String) getNode().getUniqueId());
     }
 
     @Override
     protected void configureSla() {
         String slaDueDateExpression = (String) getNode().getMetaData().get("customSLADueDate");
         if (slaDueDateExpression != null) {
-            TimerInstance timer = ((WorkflowProcessInstanceImpl) getProcessInstance()).configureSLATimer(slaDueDateExpression);
+            TimerInstance timer = ((WorkflowProcessInstanceImpl) getProcessInstance()).configureSLATimer(slaDueDateExpression, this.getId());
             if (timer != null) {
                 this.slaTimerId = timer.getId();
                 this.slaDueDate = new Date(System.currentTimeMillis() + timer.getDelay());
@@ -136,14 +145,14 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
     protected ExpirationTime createTimerInstance(Timer timer) {
 
         KieRuntime kruntime = getProcessInstance().getKnowledgeRuntime();
-        if (kruntime != null && kruntime.getEnvironment().get("jbpm.business.calendar") != null) {
-            BusinessCalendar businessCalendar = (BusinessCalendar) kruntime.getEnvironment().get("jbpm.business.calendar");
+        if (kruntime != null && kruntime.getEnvironment().get(BUSINESS_CALENDAR_ENVIRONMENT_KEY) != null) {
+            BusinessCalendar businessCalendar = (BusinessCalendar) kruntime.getEnvironment().get(BUSINESS_CALENDAR_ENVIRONMENT_KEY);
             String delay = null;
             switch (timer.getTimeType()) {
                 case Timer.TIME_CYCLE:
 
-                    String tempDelay = resolveVariable(timer.getDelay());
-                    String tempPeriod = resolveVariable(timer.getPeriod());
+                    String tempDelay = resolveTimerExpression(timer.getDelay());
+                    String tempPeriod = resolveTimerExpression(timer.getPeriod());
                     if (DateTimeUtils.isRepeatable(tempDelay)) {
                         String[] values = DateTimeUtils.parseISORepeatable(tempDelay);
                         String tempRepeatLimit = values[0];
@@ -172,9 +181,9 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
                     }
 
                 case Timer.TIME_DURATION:
-                    delay = resolveVariable(timer.getDelay());
+                    delay = resolveTimerExpression(timer.getDelay());
 
-                    return DurationExpirationTime.repeat(businessCalendar.calculateBusinessTimeAsDuration(delay));
+                    return DurationExpirationTime.after(businessCalendar.calculateBusinessTimeAsDuration(delay));
                 case Timer.TIME_DATE:
                     // even though calendar is available concrete date was provided so it shall be used
                     return ExactExpirationTime.of(timer.getDate());
@@ -194,14 +203,14 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
             case Timer.TIME_CYCLE:
                 if (timer.getPeriod() != null) {
 
-                    long actualDelay = DateTimeUtils.parseDuration(resolveVariable(timer.getDelay()));
+                    long actualDelay = DateTimeUtils.parseDuration(resolveTimerExpression(timer.getDelay()));
                     if (timer.getPeriod() == null) {
                         return DurationExpirationTime.repeat(actualDelay, actualDelay, Integer.MAX_VALUE);
                     } else {
-                        return DurationExpirationTime.repeat(actualDelay, DateTimeUtils.parseDuration(resolveVariable(timer.getPeriod())), Integer.MAX_VALUE);
+                        return DurationExpirationTime.repeat(actualDelay, DateTimeUtils.parseDuration(resolveTimerExpression(timer.getPeriod())), Integer.MAX_VALUE);
                     }
                 } else {
-                    String resolvedDelay = resolveVariable(timer.getDelay());
+                    String resolvedDelay = resolveTimerExpression(timer.getDelay());
 
                     // when using ISO date/time period is not set
                     long[] repeatValues = null;
@@ -231,7 +240,7 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
                     duration = DateTimeUtils.parseDuration(timer.getDelay());
                 } catch (RuntimeException e) {
                     // cannot parse delay, trying to interpret it
-                    s = resolveVariable(timer.getDelay());
+                    s = resolveTimerExpression(timer.getDelay());
                     duration = DateTimeUtils.parseDuration(s);
                 }
                 return DurationExpirationTime.after(duration);
@@ -241,46 +250,30 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
                     return ExactExpirationTime.of(timer.getDate());
                 } catch (RuntimeException e) {
                     // cannot parse delay, trying to interpret it
-                    s = resolveVariable(timer.getDate());
+                    s = resolveTimerExpression(timer.getDate());
                     return ExactExpirationTime.of(s);
                 }
         }
         throw new UnsupportedOperationException("Not supported timer definition");
     }
 
-    protected String resolveVariable(String s) {
-        if (s == null) {
-            return null;
-        }
-        // cannot parse delay, trying to interpret it
-        Map<String, String> replacements = new HashMap<>();
-        Matcher matcher = PatternConstants.PARAMETER_MATCHER.matcher(s);
-        while (matcher.find()) {
-            String paramName = matcher.group(1);
-            if (replacements.get(paramName) == null) {
-                VariableScopeInstance variableScopeInstance = (VariableScopeInstance) resolveContextInstance(VariableScope.VARIABLE_SCOPE, paramName);
-                if (variableScopeInstance != null) {
-                    Object variableValue = variableScopeInstance.getVariable(paramName);
-                    String variableValueString = variableValue == null ? "" : variableValue.toString();
-                    replacements.put(paramName, variableValueString);
-                } else {
-                    try {
-                        Object variableValue = MVELProcessHelper.evaluator().eval(paramName, new NodeInstanceResolverFactory(this));
-                        String variableValueString = variableValue == null ? "" : variableValue.toString();
-                        replacements.put(paramName, variableValueString);
-                    } catch (Throwable t) {
-                        logger.error("Could not find variable scope for variable {}", paramName);
-                        logger.error("when trying to replace variable in processId for sub process {}", getNodeName());
-                        logger.error("Continuing without setting process id.");
+    private String resolveTimerExpression(String expression) {
+        if (!isExpression(expression)) {
+            WorkflowProcess process = ((NodeImpl) getNode()).getProcess();
+            String lang = process.getExpressionLanguage();
+            if (lang != null) {
+                Expression exprObject = ExpressionHandlerFactory.get(lang, expression);
+                if (exprObject.isValid()) {
+                    if (context == null) {
+                        context = ContextFactory.fromNode(this);
                     }
+                    String varName = (String) process.getMetaData().get(Metadata.VARIABLE);
+                    Object target = varName == null ? this.getProcessInstance().getVariables() : context.getVariable(varName);
+                    return exprObject.eval(target, String.class, context);
                 }
             }
         }
-        for (Map.Entry<String, String> replacement : replacements.entrySet()) {
-            s = s.replace("#{" + replacement.getKey() + "}", replacement.getValue());
-        }
-
-        return s;
+        return resolveExpression(expression);
     }
 
     protected void handleSLAViolation() {
@@ -296,7 +289,7 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
 
     @Override
     public void signalEvent(String type, Object event) {
-        if ("timerTriggered".equals(type)) {
+        if (TIMER_TRIGGERED_EVENT.equals(type)) {
             TimerInstance timerInstance = (TimerInstance) event;
             if (timerInstances != null && timerInstances.contains(timerInstance.getId())) {
                 triggerTimer(timerInstance);
@@ -304,11 +297,10 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
                 handleSLAViolation();
             }
         } else if (("slaViolation:" + getStringId()).equals(type)) {
-
             handleSLAViolation();
         } else if (type.equals(getActivationType()) && event instanceof MatchCreatedEvent) {
             String name = ((MatchCreatedEvent) event).getMatch().getRule().getName();
-            if (checkProcessInstance((Activation) ((MatchCreatedEvent) event).getMatch())) {
+            if (checkProcessInstance((InternalMatch) ((MatchCreatedEvent) event).getMatch())) {
                 ((MatchCreatedEvent) event).getKieRuntime().signalEvent(name, null);
             }
         }
@@ -316,9 +308,12 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
 
     private void triggerTimer(TimerInstance timerInstance) {
         for (Map.Entry<Timer, DroolsAction> entry : getEventBasedNode().getTimers().entrySet()) {
-            if (entry.getKey().getId() == timerInstance.getTimerId()) {
+            if (Objects.equals(Objects.toString(entry.getKey().getId()), timerInstance.getTimerId())) {
                 if (timerInstance.getRepeatLimit() == 0) {
                     timerInstances.remove(timerInstance.getId());
+                    if (timerInstancesReference != null) {
+                        timerInstancesReference.remove(timerInstance.getId());
+                    }
                 }
                 executeAction((Action) entry.getValue().getMetaData("Action"));
                 return;
@@ -328,7 +323,7 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
 
     @Override
     public String[] getEventTypes() {
-        return new String[] { "timerTriggered", getActivationType() };
+        return new String[] { TIMER_TRIGGERED_EVENT, getActivationType() };
     }
 
     public void triggerCompleted() {
@@ -346,14 +341,14 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
     }
 
     protected void addTimerListener() {
-        getProcessInstance().addEventListener("timerTriggered", this, false);
+        getProcessInstance().addEventListener(TIMER_TRIGGERED_EVENT, this, false);
         getProcessInstance().addEventListener("timer", this, true);
         getProcessInstance().addEventListener("slaViolation:" + getStringId(), this, true);
     }
 
     @Override
     public void removeEventListeners() {
-        getProcessInstance().removeEventListener("timerTriggered", this, false);
+        getProcessInstance().removeEventListener(TIMER_TRIGGERED_EVENT, this, false);
         getProcessInstance().removeEventListener("timer", this, true);
         getProcessInstance().removeEventListener("slaViolation:" + getStringId(), this, true);
     }
@@ -383,8 +378,16 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
         this.timerInstances = timerInstances;
     }
 
+    public Map<String, String> getTimerInstancesReference() {
+        return timerInstancesReference;
+    }
+
+    public void internalSetTimerInstancesReference(Map<String, String> timerInstancesReference) {
+        this.timerInstancesReference = timerInstancesReference;
+    }
+
     @Override
-    public void cancel() {
+    public void cancel(CancelType cancelType) {
         if (this.slaCompliance == KogitoProcessInstance.SLA_PENDING) {
             if (System.currentTimeMillis() > slaDueDate.getTime()) {
                 // completion of the process instance is after expected SLA due date, mark it accordingly
@@ -397,7 +400,7 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
         cancelTimers();
         removeEventListeners();
         removeActivationListener();
-        super.cancel();
+        super.cancel(cancelType);
     }
 
     private void cancelTimers() {
@@ -406,6 +409,9 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
             JobsService jobService = ((InternalProcessRuntime) getProcessInstance().getKnowledgeRuntime().getProcessRuntime()).getJobsService();
             for (String id : timerInstances) {
                 jobService.cancelJob(id);
+                if (timerInstancesReference != null) {
+                    timerInstancesReference.remove(id);
+                }
             }
         }
     }
@@ -430,59 +436,19 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
         getProcessInstance().removeEventListener(getActivationType(), this, true);
     }
 
-    protected boolean checkProcessInstance(Activation activation) {
-        final Map<?, ?> declarations = activation.getSubRule().getOuterDeclarations();
-        for (Iterator<?> it = declarations.values().iterator(); it.hasNext();) {
-            Declaration declaration = (Declaration) it.next();
-            if ("processInstance".equals(declaration.getIdentifier())
-                    || "org.kie.api.runtime.process.WorkflowProcessInstance".equals(declaration.getTypeName())) {
-                Object value = declaration.getValue(
-                        ((StatefulKnowledgeSessionImpl) getProcessInstance().getKnowledgeRuntime()).getInternalWorkingMemory(),
-                        activation.getTuple().get(declaration).getObject());
-                if (value instanceof ProcessInstance) {
-                    return ((ProcessInstance) value).getStringId().equals(getProcessInstance().getStringId());
-                }
-            }
-        }
-        return true;
-    }
-
-    protected boolean checkDeclarationMatch(Match match, String matchVariable) {
-        if (matchVariable == null) {
-            // no extra check is needed
-            return true;
-        }
-
-        Object dec = match.getDeclarationIds().contains("$" + matchVariable) ? match.getDeclarationValue("$" + matchVariable) : match.getDeclarationValue(matchVariable);
-        Object var = getVariable(matchVariable);
-
-        return var.equals(dec);
-    }
-
-    protected void mapDynamicOutputData(Map<String, Object> results) {
-        if (results != null && !results.isEmpty()) {
-            VariableScope variableScope = (VariableScope) ((ContextContainer) getProcessInstance().getProcess()).getDefaultContext(VariableScope.VARIABLE_SCOPE);
-            VariableScopeInstance variableScopeInstance = (VariableScopeInstance) getProcessInstance().getContextInstance(VariableScope.VARIABLE_SCOPE);
-            for (Entry<String, Object> result : results.entrySet()) {
-                String variableName = result.getKey();
-                Variable variable = variableScope.findVariable(variableName);
-                if (variable != null) {
-                    variableScopeInstance.getVariableScope().validateVariable(getProcessInstance().getProcessName(), variableName, result.getValue());
-                    variableScopeInstance.setVariable(this, variableName, result.getValue());
-                }
-            }
-        }
+    protected boolean checkProcessInstance(InternalMatch match) {
+        ReteEvaluator workingMemory = (ReteEvaluator) getProcessInstance().getKnowledgeRuntime();
+        return match.checkProcessInstance(workingMemory, getProcessInstance().getStringId());
     }
 
     public Map<String, String> extractTimerEventInformation() {
         if (getTimerInstances() != null) {
             for (String id : getTimerInstances()) {
-                String[] ids = id.split("_");
-
+                String referenceId = timerInstancesReference != null ? timerInstancesReference.get(id) : null;
                 for (Timer entry : getEventBasedNode().getTimers().keySet()) {
-                    if (entry.getId() == Long.valueOf(ids[1])) {
+                    if (Objects.equals(Long.toString(entry.getId()), referenceId)) {
                         Map<String, String> properties = new HashMap<>();
-                        properties.put("TimerID", id);
+                        properties.put("TimerID", referenceId);
                         properties.put("Delay", entry.getDelay());
                         properties.put("Period", entry.getPeriod());
                         properties.put("Date", entry.getDate());
@@ -494,5 +460,11 @@ public abstract class StateBasedNodeInstance extends ExtendedNodeInstanceImpl im
         }
 
         return null;
+    }
+
+    protected final KogitoProcessContext getProcessContext(Throwable e) {
+        KogitoProcessContext context = ContextFactory.fromNode(this);
+        context.getContextData().put("Exception", e);
+        return context;
     }
 }

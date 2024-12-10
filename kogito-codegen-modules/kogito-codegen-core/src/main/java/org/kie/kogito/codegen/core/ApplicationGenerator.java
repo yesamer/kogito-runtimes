@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.core;
 
@@ -23,27 +26,31 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.drools.core.util.StringUtils;
+import org.drools.codegen.common.GeneratedFile;
+import org.drools.codegen.common.GeneratedFileType;
+import org.drools.util.StringUtils;
 import org.kie.kogito.codegen.api.ApplicationSection;
-import org.kie.kogito.codegen.api.GeneratedFile;
-import org.kie.kogito.codegen.api.GeneratedFileType;
 import org.kie.kogito.codegen.api.Generator;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.kie.kogito.codegen.api.Generator.REST_TYPE;
+import static org.kie.kogito.codegen.core.CustomDashboardGeneratedUtils.loadCustomGrafanaDashboardsList;
 
 public class ApplicationGenerator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApplicationGenerator.class);
 
     public static final String APPLICATION_CLASS_NAME = "Application";
-    private static final GeneratedFileType APPLICATION_SECTION_TYPE = GeneratedFileType.of("APPLICATION_SECTION", GeneratedFileType.Category.SOURCE);
+    private static final GeneratedFileType APPLICATION_SECTION_TYPE = GeneratedFileType.of("APPLICATION_SECTION",
+            GeneratedFileType.Category.SOURCE);
 
     private final ApplicationContainerGenerator applicationMainGenerator;
     private ApplicationConfigGenerator applicationConfigGenerator;
@@ -78,6 +85,8 @@ public class ApplicationGenerator {
 
         generatedFiles.addAll(applicationConfigGenerator.generate());
 
+        generatedFiles.addAll(loadCustomGrafanaDashboardsList(context));
+
         DashboardGeneratedFileUtils.list(generatedFiles).ifPresent(generatedFiles::add);
 
         logGeneratedFiles(generatedFiles);
@@ -87,8 +96,11 @@ public class ApplicationGenerator {
 
     public List<GeneratedFile> generateComponents() {
         return generators.stream()
-                .flatMap(gen -> gen.generate().stream())
-                .filter(this::filterGeneratedFile)
+                .flatMap(gen -> {
+                    boolean keepRestFile = keepRestFile(gen);
+                    return gen.generate().stream()
+                            .filter(generatedFile -> filterGeneratedFile(generatedFile, keepRestFile));
+                })
                 .collect(Collectors.toList());
     }
 
@@ -104,8 +116,12 @@ public class ApplicationGenerator {
         return applicationMainGenerator.generate();
     }
 
-    private boolean filterGeneratedFile(GeneratedFile generatedFile) {
-        boolean keepFile = context.hasREST() || !REST_TYPE.equals(generatedFile.type());
+    boolean keepRestFile(Generator generator) {
+        return context.hasRESTForGenerator(generator);
+    }
+
+    private boolean filterGeneratedFile(GeneratedFile generatedFile, boolean keepRestFile) {
+        boolean keepFile = keepRestFile || !REST_TYPE.equals(generatedFile.type());
         if (!keepFile) {
             LOGGER.warn("Skipping file because REST is disabled: " + generatedFile.relativePath());
         }
@@ -117,6 +133,7 @@ public class ApplicationGenerator {
                 .map(Generator::section)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
+                .peek(section -> this.context.addApplicationSection(section))
                 .map(section -> new GeneratedFile(APPLICATION_SECTION_TYPE,
                         getFilePath(section.sectionClassName()),
                         section.compilationUnit().toString()))
@@ -145,13 +162,15 @@ public class ApplicationGenerator {
         return Collections.unmodifiableCollection(generators);
     }
 
-    protected Collection<String> loadAddonList() {
-        ArrayList<String> addons = new ArrayList<>();
+    protected Set<String> loadAddonList() {
+        Set<String> addons = new HashSet<>();
         try {
             Enumeration<URL> urls = context.getClassLoader().getResources("META-INF/kogito.addon");
             while (urls.hasMoreElements()) {
                 URL url = urls.nextElement();
-                try (InputStream urlStream = url.openStream(); InputStreamReader isr = new InputStreamReader(urlStream)) {
+                try (InputStream urlStream = url.openStream();
+                        InputStreamReader isr =
+                                new InputStreamReader(urlStream)) {
                     String addon = StringUtils.readFileAsString(isr);
                     addons.add(addon);
                 }

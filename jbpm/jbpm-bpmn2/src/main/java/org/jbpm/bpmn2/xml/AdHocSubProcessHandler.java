@@ -1,26 +1,31 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.bpmn2.xml;
 
 import java.util.Arrays;
 import java.util.List;
 
-import org.drools.core.xml.ExtensibleXmlParser;
 import org.jbpm.bpmn2.core.SequenceFlow;
+import org.jbpm.compiler.xml.Parser;
+import org.jbpm.compiler.xml.ProcessBuildData;
 import org.jbpm.process.core.context.variable.VariableScope;
+import org.jbpm.ruleflow.core.RuleFlowProcess;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.node.DynamicNode;
 import org.w3c.dom.Element;
@@ -52,35 +57,46 @@ public class AdHocSubProcessHandler extends CompositeContextNodeHandler {
 
     @SuppressWarnings("unchecked")
     @Override
-    protected void handleNode(final Node node, final Element element, final String uri,
-            final String localName, final ExtensibleXmlParser parser) throws SAXException {
+    protected Node handleNode(final Node node, final Element element, final String uri,
+            final String localName, final Parser parser) throws SAXException {
         super.handleNode(node, element, uri, localName, parser);
         DynamicNode dynamicNode = (DynamicNode) node;
         String cancelRemainingInstances = element.getAttribute("cancelRemainingInstances");
         if ("false".equals(cancelRemainingInstances)) {
             dynamicNode.setCancelRemainingInstances(false);
         }
+
+        dynamicNode.setLanguage("http://www.java.com/java");
+
         // by default it should not autocomplete as it's adhoc
         org.w3c.dom.Node xmlNode = element.getFirstChild();
         dynamicNode.setActivationCondition((String) node.getMetaData().get(CUSTOM_ACTIVATION_CONDITION));
         while (xmlNode != null) {
             String nodeName = xmlNode.getNodeName();
             if (COMPLETION_CONDITION.equals(nodeName)) {
+                Element completeConditionElement = (Element) xmlNode;
+                String dialect = completeConditionElement.getAttribute("language");
+
                 String expression = xmlNode.getTextContent();
                 if (AUTOCOMPLETE_EXPRESSIONS.contains(expression)) {
                     dynamicNode.setAutoComplete(true);
                 } else {
                     dynamicNode.setCompletionCondition(expression);
+                    if (!dialect.isBlank()) {
+                        dynamicNode.setLanguage(dialect);
+                    }
                 }
             }
             xmlNode = xmlNode.getNextSibling();
         }
+        RuleFlowProcess process = (RuleFlowProcess) ((ProcessBuildData) parser.getData()).getMetaData(ProcessHandler.CURRENT_PROCESS);
         List<SequenceFlow> connections = (List<SequenceFlow>) dynamicNode.getMetaData(ProcessHandler.CONNECTIONS);
-        ProcessHandler.linkConnections(dynamicNode, connections);
+        ProcessHandler.linkConnections(process, dynamicNode, connections);
         ProcessHandler.linkBoundaryEvents(dynamicNode);
 
         handleScript(dynamicNode, element, "onEntry");
         handleScript(dynamicNode, element, "onExit");
+        return node;
     }
 
     @Override
@@ -100,7 +116,7 @@ public class AdHocSubProcessHandler extends CompositeContextNodeHandler {
         visitConnectionsAndAssociations(dynamicNode, xmlDump, metaDataType);
 
         if (dynamicNode.isAutoComplete()) {
-            xmlDump.append("    <completionCondition xsi:type=\"tFormalExpression\">" + AUTOCOMPLETE_COMPLETION_CONDITION + "</completionCondition>" + EOL);
+            xmlDump.append("<completionCondition xsi:type=\"tFormalExpression\" language=\"" + dynamicNode.getLanguage() + "\">" + AUTOCOMPLETE_COMPLETION_CONDITION + "</completionCondition>" + EOL);
         }
         endNode("adHocSubProcess", xmlDump);
     }

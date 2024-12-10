@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.instance.node;
 
@@ -21,22 +24,21 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 
 import org.jbpm.process.core.context.variable.Variable;
 import org.jbpm.process.core.context.variable.VariableScope;
-import org.jbpm.process.core.event.EventTransformer;
 import org.jbpm.process.instance.InternalProcessRuntime;
-import org.jbpm.process.instance.ProcessInstance;
-import org.jbpm.process.instance.context.variable.VariableScopeInstance;
 import org.jbpm.util.PatternConstants;
 import org.jbpm.workflow.core.Node;
+import org.jbpm.workflow.core.impl.NodeIoHelper;
 import org.jbpm.workflow.core.node.EventNode;
-import org.jbpm.workflow.instance.WorkflowProcessInstance;
 import org.jbpm.workflow.instance.impl.ExtendedNodeInstanceImpl;
 import org.jbpm.workflow.instance.impl.WorkflowProcessInstanceImpl;
 import org.kie.kogito.internal.process.event.KogitoEventListener;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
+import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.jobs.JobsService;
 import org.kie.kogito.process.BaseEventDescription;
 import org.kie.kogito.process.EventDescription;
@@ -44,6 +46,7 @@ import org.kie.kogito.process.NamedDataType;
 import org.kie.kogito.timer.TimerInstance;
 
 import static org.jbpm.workflow.instance.impl.DummyEventListener.EMPTY_EVENT_LISTENER;
+import static org.jbpm.workflow.instance.node.TimerNodeInstance.TIMER_TRIGGERED_EVENT;
 
 /**
  * Runtime counterpart of an event node.
@@ -53,32 +56,26 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
 
     private static final long serialVersionUID = 510l;
 
-    public void signalEvent(String type, Object event) {
-        if ("timerTriggered".equals(type)) {
+    @Override
+    public void signalEvent(String type, Object event, Function<String, Object> varResolver) {
+        if (TIMER_TRIGGERED_EVENT.equals(type)) {
             TimerInstance timerInstance = (TimerInstance) event;
             if (timerInstance.getId().equals(slaTimerId)) {
                 handleSLAViolation();
             }
         } else if (("slaViolation:" + getStringId()).equals(type)) {
-
             handleSLAViolation();
-
         } else {
-            String variableName = getEventNode().getVariableName();
-            if (variableName != null) {
-                VariableScopeInstance variableScopeInstance = (VariableScopeInstance) resolveContextInstance(VariableScope.VARIABLE_SCOPE, variableName);
-                if (variableScopeInstance == null) {
-                    throw new IllegalArgumentException(
-                            "Could not find variable for event node: " + variableName);
-                }
-                EventTransformer transformer = getEventNode().getEventTransformer();
-                if (transformer != null) {
-                    event = transformer.transformEvent(event);
-                }
-                variableScopeInstance.setVariable(this, variableName, event);
-            }
+            EventNode eventNode = (EventNode) getNode();
+            Map<String, Object> outputSet = new HashMap<>();
+            outputSet.put(eventNode.getInputVariableName(), event);
+            NodeIoHelper.processOutputs(this, key -> outputSet.get(key), varName -> this.getVariable(varName));
             triggerCompleted();
         }
+    }
+
+    public void signalEvent(String type, Object event) {
+        this.signalEvent(type, event, varName -> this.getVariable(varName));
     }
 
     @Override
@@ -92,25 +89,26 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
         // Do nothing, event activated
     }
 
+    @Override
     protected void configureSla() {
         String slaDueDateExpression = (String) getNode().getMetaData().get("customSLADueDate");
         if (slaDueDateExpression != null) {
-            TimerInstance timer = ((WorkflowProcessInstanceImpl) getProcessInstance()).configureSLATimer(slaDueDateExpression);
+            TimerInstance timer = ((WorkflowProcessInstanceImpl) getProcessInstance()).configureSLATimer(slaDueDateExpression, this.getId());
             if (timer != null) {
                 this.slaTimerId = timer.getId();
                 this.slaDueDate = new Date(System.currentTimeMillis() + timer.getDelay());
-                this.slaCompliance = ProcessInstance.SLA_PENDING;
+                this.slaCompliance = KogitoProcessInstance.SLA_PENDING;
                 logger.debug("SLA for node instance {} is PENDING with due date {}", this.getStringId(), this.slaDueDate);
             }
         }
     }
 
     protected void handleSLAViolation() {
-        if (slaCompliance == ProcessInstance.SLA_PENDING) {
+        if (slaCompliance == KogitoProcessInstance.SLA_PENDING) {
             InternalProcessRuntime processRuntime = ((InternalProcessRuntime) getProcessInstance().getKnowledgeRuntime().getProcessRuntime());
             processRuntime.getProcessEventSupport().fireBeforeSLAViolated(getProcessInstance(), this, getProcessInstance().getKnowledgeRuntime());
             logger.debug("SLA violated on node instance {}", getStringId());
-            this.slaCompliance = ProcessInstance.SLA_VIOLATED;
+            this.slaCompliance = KogitoProcessInstance.SLA_VIOLATED;
             this.slaTimerId = null;
             processRuntime.getProcessEventSupport().fireAfterSLAViolated(getProcessInstance(), this, getProcessInstance().getKnowledgeRuntime());
         }
@@ -126,15 +124,15 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
 
     protected void addTimerListener() {
 
-        ((WorkflowProcessInstance) getProcessInstance()).addEventListener("timerTriggered", new VariableExternalEventListener("timerTriggered"), false);
-        ((WorkflowProcessInstance) getProcessInstance()).addEventListener("timer", new VariableExternalEventListener("timer"), true);
-        ((WorkflowProcessInstance) getProcessInstance()).addEventListener("slaViolation:" + getStringId(), new VariableExternalEventListener("slaViolation"), true);
+        getProcessInstance().addEventListener(TIMER_TRIGGERED_EVENT, new VariableExternalEventListener(TIMER_TRIGGERED_EVENT), false);
+        getProcessInstance().addEventListener("timer", new VariableExternalEventListener("timer"), true);
+        getProcessInstance().addEventListener("slaViolation:" + getStringId(), new VariableExternalEventListener("slaViolation"), true);
     }
 
     public void removeTimerListeners() {
-        ((WorkflowProcessInstance) getProcessInstance()).removeEventListener("timerTriggered", new VariableExternalEventListener("timerTriggered"), false);
-        ((WorkflowProcessInstance) getProcessInstance()).removeEventListener("timer", new VariableExternalEventListener("timer"), true);
-        ((WorkflowProcessInstance) getProcessInstance()).removeEventListener("slaViolation:" + getStringId(), new VariableExternalEventListener("slaViolation"), true);
+        getProcessInstance().removeEventListener(TIMER_TRIGGERED_EVENT, new VariableExternalEventListener(TIMER_TRIGGERED_EVENT), false);
+        getProcessInstance().removeEventListener("timer", new VariableExternalEventListener("timer"), true);
+        getProcessInstance().removeEventListener("slaViolation:" + getStringId(), new VariableExternalEventListener("slaViolation"), true);
     }
 
     public EventNode getEventNode() {
@@ -144,12 +142,12 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
     public void triggerCompleted() {
         getProcessInstance().removeEventListener(getEventType(), getEventListener(), true);
         removeTimerListeners();
-        if (this.slaCompliance == ProcessInstance.SLA_PENDING) {
+        if (this.slaCompliance == KogitoProcessInstance.SLA_PENDING) {
             if (System.currentTimeMillis() > slaDueDate.getTime()) {
                 // completion of the node instance is after expected SLA due date, mark it accordingly
-                this.slaCompliance = ProcessInstance.SLA_VIOLATED;
+                this.slaCompliance = KogitoProcessInstance.SLA_VIOLATED;
             } else {
-                this.slaCompliance = ProcessInstance.STATE_COMPLETED;
+                this.slaCompliance = KogitoProcessInstance.STATE_COMPLETED;
             }
         }
         cancelSlaTimer();
@@ -158,19 +156,19 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
     }
 
     @Override
-    public void cancel() {
+    public void cancel(CancelType cancelType) {
         getProcessInstance().removeEventListener(getEventType(), getEventListener(), true);
         removeTimerListeners();
-        if (this.slaCompliance == ProcessInstance.SLA_PENDING) {
+        if (this.slaCompliance == KogitoProcessInstance.SLA_PENDING) {
             if (System.currentTimeMillis() > slaDueDate.getTime()) {
                 // completion of the process instance is after expected SLA due date, mark it accordingly
-                this.slaCompliance = ProcessInstance.SLA_VIOLATED;
+                this.slaCompliance = KogitoProcessInstance.SLA_VIOLATED;
             } else {
-                this.slaCompliance = ProcessInstance.SLA_ABORTED;
+                this.slaCompliance = KogitoProcessInstance.SLA_ABORTED;
             }
         }
         removeTimerListeners();
-        super.cancel();
+        super.cancel(cancelType);
     }
 
     private class VariableExternalEventListener implements KogitoEventListener, Serializable {
@@ -242,7 +240,7 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
     }
 
     public String getEventType() {
-        return resolveVariable(getEventNode().getType());
+        return resolveExpression(getEventNode().getType());
     }
 
     protected KogitoEventListener getEventListener() {
@@ -259,31 +257,6 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
         }
 
         return false;
-    }
-
-    private String resolveVariable(String s) {
-        if (s == null) {
-            return null;
-        }
-
-        Map<String, String> replacements = new HashMap<String, String>();
-        Matcher matcher = PatternConstants.PARAMETER_MATCHER.matcher(s);
-        while (matcher.find()) {
-            String paramName = matcher.group(1);
-            if (replacements.get(paramName) == null) {
-                VariableScopeInstance variableScopeInstance = (VariableScopeInstance) resolveContextInstance(VariableScope.VARIABLE_SCOPE, paramName);
-                if (variableScopeInstance != null) {
-                    Object variableValue = variableScopeInstance.getVariable(paramName);
-                    String variableValueString = variableValue == null ? "" : variableValue.toString();
-                    replacements.put(paramName, variableValueString);
-                }
-            }
-        }
-        for (Map.Entry<String, String> replacement : replacements.entrySet()) {
-            s = s.replace("#{" + replacement.getKey() + "}", replacement.getValue());
-        }
-
-        return s;
     }
 
     private void callSignal(String type, Object event) {
@@ -305,4 +278,5 @@ public class EventNodeInstance extends ExtendedNodeInstanceImpl implements Kogit
         }
         return Collections.singleton(new BaseEventDescription(getEventType(), getNodeDefinitionId(), getNodeName(), "signal", getStringId(), getProcessInstance().getStringId(), dataType));
     }
+
 }

@@ -1,17 +1,20 @@
 /*
- * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.process;
 
@@ -24,12 +27,13 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.kie.kogito.correlation.Correlation;
 import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItem;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItem;
+import org.kie.kogito.internal.process.workitem.Policy;
+import org.kie.kogito.internal.process.workitem.WorkItemTransition;
 import org.kie.kogito.process.flexible.AdHocFragment;
 import org.kie.kogito.process.flexible.Milestone;
-import org.kie.kogito.process.workitem.Policy;
-import org.kie.kogito.process.workitem.Transition;
 
 public interface ProcessInstance<T> {
 
@@ -61,11 +65,36 @@ public interface ProcessInstance<T> {
     void start(String trigger, String referenceId);
 
     /**
+     * Starts process instance with trigger
+     *
+     * @param trigger name of the trigger that will indicate what start node to trigger
+     * @param referenceId optional reference id that points to a another component triggering this instance
+     * @param headers process headers
+     */
+    void start(String trigger, String referenceId, Map<String, List<String>> headers);
+
+    /**
+     * Starts process instance with trigger and headers
+     *
+     * @param trigger name of the trigger that will indicate what start node to trigger
+     * @param headers list of headers
+     */
+    void start(Map<String, List<String>> headers);
+
+    /**
      * Starts process instance from given node
      *
      * @param nodeId node id that should be used as the first node
      */
     void startFrom(String nodeId);
+
+    /**
+     * Starts process instance from given node and headers
+     *
+     * @param nodeId node id that should be used as the first node
+     * @param headers list of headers
+     */
+    void startFrom(String startFromNodeId, Map<String, List<String>> headers);
 
     /**
      * Starts process instance from given node
@@ -74,6 +103,15 @@ public interface ProcessInstance<T> {
      * @param referenceId optional reference id that points to a another component triggering this instance
      */
     void startFrom(String nodeId, String referenceId);
+
+    /**
+     * Starts process instance from given node
+     *
+     * @param nodeId node id that should be used as the first node
+     * @param referenceId optional reference id that points to a another component triggering this instance
+     * @param headers process headers
+     */
+    void startFrom(String nodeId, String referenceId, Map<String, List<String>> headers);
 
     /**
      * Sends given signal into this process instance
@@ -100,6 +138,12 @@ public interface ProcessInstance<T> {
     T updateVariables(T updates);
 
     /**
+     * Partially updates process variables of this process instance
+     * Partial means that null values are ignored.
+     */
+    T updateVariablesPartially(T updates);
+
+    /**
      * Returns current status of this process instance
      *
      * @return the current status
@@ -113,7 +157,7 @@ public interface ProcessInstance<T> {
      * @param variables optional variables
      * @param policies optional list of policies to be enforced
      */
-    void completeWorkItem(String id, Map<String, Object> variables, Policy<?>... policies);
+    void completeWorkItem(String id, Map<String, Object> variables, Policy... policies);
 
     /**
      * Updates work item according to provided consumer
@@ -123,7 +167,7 @@ public interface ProcessInstance<T> {
      * @param policies optional security information
      * @return result of the operation performed by the updater
      */
-    <R> R updateWorkItem(String id, Function<KogitoWorkItem, R> updater, Policy<?>... policies);
+    <R> R updateWorkItem(String id, Function<KogitoWorkItem, R> updater, Policy... policies);
 
     /**
      * Aborts work item belonging to this process instance
@@ -131,7 +175,7 @@ public interface ProcessInstance<T> {
      * @param id id of the work item to complete
      * @param policies optional list of policies to be enforced
      */
-    void abortWorkItem(String id, Policy<?>... policies);
+    void abortWorkItem(String id, Policy... policies);
 
     /**
      * Transition work item belonging to this process instance not another life cycle phase
@@ -139,7 +183,7 @@ public interface ProcessInstance<T> {
      * @param id id of the work item to complete
      * @param transition target transition including phase, identity and data
      */
-    void transitionWorkItem(String id, Transition<?> transition);
+    void transitionWorkItem(String id, WorkItemTransition transition);
 
     /**
      * Returns work item identified by given id if found
@@ -148,7 +192,7 @@ public interface ProcessInstance<T> {
      * @param policies optional list of policies to be enforced
      * @return work item with its parameters if found
      */
-    WorkItem workItem(String workItemId, Policy<?>... policies);
+    WorkItem workItem(String workItemId, Policy... policies);
 
     /**
      * Return nodes that fulfills a particular filter
@@ -162,9 +206,17 @@ public interface ProcessInstance<T> {
      * Returns list of currently active work items.
      *
      * @param policies optional list of policies to be enforced
-     * @return non empty list of identifiers of currently active tasks.
+     * @return list of work items
      */
-    List<WorkItem> workItems(Policy<?>... policies);
+    List<WorkItem> workItems(Policy... policies);
+
+    /**
+     * Returns list of filtered work items
+     * 
+     * @param p the predicate to be applied to the node holding the work item
+     * @return list of work items
+     */
+    List<WorkItem> workItems(Predicate<KogitoNodeInstance> p, Policy... policies);
 
     /**
      * Returns identifier of this process instance
@@ -204,7 +256,7 @@ public interface ProcessInstance<T> {
     default ProcessInstance<T> checkError() {
         Optional<ProcessError> error = error();
         if (error.isPresent()) {
-            throw new ProcessInstanceExecutionException(id(), error.get().failedNodeId(), error.get().errorMessage());
+            throw new ProcessInstanceExecutionException(id(), error.get().failedNodeId(), error.get().errorMessage(), error.get().errorCause());
         }
         return this;
     }
@@ -231,6 +283,7 @@ public interface ProcessInstance<T> {
      */
     Collection<AdHocFragment> adHocFragments();
 
-    Long version();
+    long version();
 
+    Optional<? extends Correlation<?>> correlation();
 }

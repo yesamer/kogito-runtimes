@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.util;
 
@@ -22,10 +25,10 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 
-import org.jbpm.process.instance.impl.humantask.HumanTaskWorkItemHandler;
 import org.junit.jupiter.api.Test;
 import org.kie.kogito.Config;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItemHandler;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemHandler;
+import org.kie.kogito.internal.process.workitem.Policy;
 import org.kie.kogito.process.Process;
 import org.kie.kogito.process.ProcessConfig;
 import org.kie.kogito.process.ProcessInstance;
@@ -33,11 +36,9 @@ import org.kie.kogito.process.ProcessInstanceReadMode;
 import org.kie.kogito.process.ProcessInstances;
 import org.kie.kogito.process.WorkItem;
 import org.kie.kogito.process.WorkItemHandlerConfig;
-import org.kie.kogito.process.workitem.Policy;
+import org.kie.kogito.process.workitems.impl.DefaultKogitoWorkItemHandler;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -93,17 +94,18 @@ public class JsonSchemaUtilTest {
         InputStream in = new ByteArrayInputStream(example.getBytes());
         Map<String, Object> schemaMap = JsonSchemaUtil.load(in);
         in.close();
-        assertEquals("object", schemaMap.get("type"));
+        assertThat(schemaMap).containsEntry("type", "object");
+
         Map<String, Object> properties = (Map<String, Object>) schemaMap.get("properties");
-        assertEquals(2, properties.size());
-        assertTrue((Boolean) ((Map) properties.get("approved")).get("output"));
-        assertTrue((Boolean) ((Map) properties.get("traveller")).get("input"));
+        assertThat(properties).hasSize(2);
+        assertThat((Boolean) ((Map) properties.get("approved")).get("output")).isTrue();
+        assertThat((Boolean) ((Map) properties.get("traveller")).get("input")).isTrue();
     }
 
     @Test
     <T> void testJsonSchemaPhases() throws IOException {
         InputStream in = new ByteArrayInputStream(example.getBytes());
-        Policy<T>[] policies = new Policy[0];
+        Policy[] policies = new Policy[0];
         Map<String, Object> schemaMap = JsonSchemaUtil.load(in);
         in.close();
         Process<T> process = mock(Process.class);
@@ -119,9 +121,9 @@ public class JsonSchemaUtilTest {
         when(config.get(any())).thenReturn(processConfig);
         WorkItemHandlerConfig workItemHandlerConfig = mock(WorkItemHandlerConfig.class);
         when(processConfig.workItemHandlers()).thenReturn(workItemHandlerConfig);
-        KogitoWorkItemHandler workItemHandler = new HumanTaskWorkItemHandler();
+        KogitoWorkItemHandler workItemHandler = new DefaultKogitoWorkItemHandler();
         when(workItemHandlerConfig.forName("Human Task")).thenReturn(workItemHandler);
         schemaMap = JsonSchemaUtil.addPhases(process, workItemHandler, "pepe", "task", policies, schemaMap);
-        assertFalse(((Collection) schemaMap.get("phases")).isEmpty());
+        assertThat(((Collection) schemaMap.get("phases"))).isNotEmpty();
     }
 }

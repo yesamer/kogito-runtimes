@@ -1,28 +1,30 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.process.workitems;
 
 import java.util.Map;
 import java.util.Set;
 
-import org.drools.core.process.instance.WorkItem;
 import org.kie.api.runtime.process.WorkItemHandler;
-import org.kie.kogito.internal.process.runtime.KogitoWorkItemHandler;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemHandler;
 
-public interface InternalKogitoWorkItemManager extends org.drools.core.process.instance.WorkItemManager, org.kie.kogito.internal.process.runtime.KogitoWorkItemManager {
+public interface InternalKogitoWorkItemManager extends org.drools.core.process.WorkItemManager, org.kie.kogito.internal.process.workitem.KogitoWorkItemManager {
 
     void internalExecuteWorkItem(InternalKogitoWorkItem workItem);
 
@@ -34,11 +36,13 @@ public interface InternalKogitoWorkItemManager extends org.drools.core.process.i
 
     InternalKogitoWorkItem getWorkItem(String id);
 
+    void internalRemoveWorkItem(String id);
+
     void signalEvent(String type, Object event, String processInstanceId);
 
     void retryWorkItem(String workItemID, Map<String, Object> params);
 
-    Set<WorkItem> getWorkItems();
+    Set<org.drools.core.process.WorkItem> getWorkItems();
 
     @Override
     default void registerWorkItemHandler(String workItemName, WorkItemHandler handler) {
@@ -46,12 +50,12 @@ public interface InternalKogitoWorkItemManager extends org.drools.core.process.i
     }
 
     @Override
-    default void internalExecuteWorkItem(org.drools.core.process.instance.WorkItem workItem) {
+    default void internalExecuteWorkItem(org.drools.core.process.WorkItem workItem) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    default void internalAddWorkItem(org.drools.core.process.instance.WorkItem workItem) {
+    default void internalAddWorkItem(org.drools.core.process.WorkItem workItem) {
         throw new UnsupportedOperationException();
     }
 
@@ -61,12 +65,7 @@ public interface InternalKogitoWorkItemManager extends org.drools.core.process.i
     }
 
     @Override
-    default WorkItem getWorkItem(long l) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    default void signalEvent(String s, Object o, long l) {
+    default org.drools.core.process.WorkItem getWorkItem(long l) {
         throw new UnsupportedOperationException();
     }
 

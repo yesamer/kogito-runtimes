@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process;
 
@@ -30,10 +33,11 @@ import org.jbpm.process.core.datatype.impl.type.ObjectDataType;
 import org.jbpm.process.core.datatype.impl.type.StringDataType;
 import org.jbpm.process.core.impl.ParameterDefinitionImpl;
 import org.jbpm.process.core.impl.WorkImpl;
-import org.jbpm.process.instance.impl.demo.DoNothingWorkItemHandler;
-import org.jbpm.process.instance.impl.demo.MockDataWorkItemHandler;
 import org.jbpm.process.test.Person;
+import org.jbpm.process.workitem.builtin.DoNothingWorkItemHandler;
+import org.jbpm.process.workitem.builtin.MockDataWorkItemHandler;
 import org.jbpm.ruleflow.core.RuleFlowProcess;
+import org.jbpm.ruleflow.core.WorkflowElementIdentifierFactory;
 import org.jbpm.test.util.AbstractBaseTest;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.impl.ConnectionImpl;
@@ -42,16 +46,20 @@ import org.jbpm.workflow.core.node.StartNode;
 import org.jbpm.workflow.core.node.WorkItemNode;
 import org.jbpm.workflow.instance.WorkflowProcessInstance;
 import org.junit.jupiter.api.Test;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
 import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.internal.process.runtime.KogitoProcessRuntime;
-import org.kie.kogito.process.workitems.KogitoWorkItemHandlerNotFoundException;
+import org.kie.kogito.internal.process.workitem.KogitoWorkItemHandlerNotFoundException;
 import org.slf4j.LoggerFactory;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 
 public class WorkItemTest extends AbstractBaseTest {
+
+    private static WorkflowElementIdentifier one = WorkflowElementIdentifierFactory.fromExternalFormat("one");
+    private static WorkflowElementIdentifier two = WorkflowElementIdentifierFactory.fromExternalFormat("two");
+    private static WorkflowElementIdentifier three = WorkflowElementIdentifierFactory.fromExternalFormat("three");
 
     public void addLogger() {
         logger = LoggerFactory.getLogger(this.getClass());
@@ -73,15 +81,8 @@ public class WorkItemTest extends AbstractBaseTest {
                 new Person("John Doe"));
 
         KogitoProcessInstance processInstance = null;
-        try {
-            processInstance = kruntime.startProcess("org.drools.actions",
-                    parameters);
-            fail("should fail if WorkItemHandler for" + workName + "is not registered");
-        } catch (Throwable e) {
-
-        }
-        assertEquals(KogitoProcessInstance.STATE_ERROR,
-                processInstance.getState());
+        processInstance = kruntime.startProcess("org.drools.actions", parameters);
+        assertThat(processInstance.getState()).isEqualTo(KogitoProcessInstance.STATE_ERROR);
     }
 
     @Test
@@ -104,8 +105,7 @@ public class WorkItemTest extends AbstractBaseTest {
 
         KogitoProcessInstance processInstance = kruntime.startProcess("org.drools.actions", parameters);
         String processInstanceId = processInstance.getStringId();
-        assertEquals(KogitoProcessInstance.STATE_ACTIVE,
-                processInstance.getState());
+        assertThat(processInstance.getState()).isEqualTo(KogitoProcessInstance.STATE_ACTIVE);
         kruntime.getKogitoWorkItemManager().registerWorkItemHandler(workName,
                 null);
 
@@ -116,8 +116,7 @@ public class WorkItemTest extends AbstractBaseTest {
 
         }
 
-        assertEquals(KogitoProcessInstance.STATE_ABORTED,
-                processInstance.getState());
+        assertThat(processInstance.getState()).isEqualTo(KogitoProcessInstance.STATE_ABORTED);
     }
 
     @Test
@@ -143,11 +142,9 @@ public class WorkItemTest extends AbstractBaseTest {
                 parameters);
 
         Object numberVariable = ((WorkflowProcessInstance) processInstance).getVariable("MyObject");
-        assertNotNull(numberVariable);
-        assertEquals("test", numberVariable);
+        assertThat(numberVariable).isNotNull().isEqualTo("test");
 
-        assertEquals(KogitoProcessInstance.STATE_COMPLETED,
-                processInstance.getState());
+        assertThat(processInstance.getState()).isEqualTo(KogitoProcessInstance.STATE_COMPLETED);
     }
 
     @Test
@@ -181,11 +178,9 @@ public class WorkItemTest extends AbstractBaseTest {
                 parameters);
 
         Object numberVariable = ((WorkflowProcessInstance) processInstance).getVariable("MyObject");
-        assertNotNull(numberVariable);
-        assertEquals("one", numberVariable);
+        assertThat(numberVariable).isNotNull().isEqualTo("one");
 
-        assertEquals(KogitoProcessInstance.STATE_COMPLETED,
-                processInstance.getState());
+        assertThat(processInstance.getState()).isEqualTo(KogitoProcessInstance.STATE_COMPLETED);
         parameters = new HashMap<String, Object>();
         parameters.put("UserName",
                 "John Doe");
@@ -196,11 +191,9 @@ public class WorkItemTest extends AbstractBaseTest {
                 parameters);
 
         numberVariable = ((WorkflowProcessInstance) processInstance).getVariable("MyObject");
-        assertNotNull(numberVariable);
-        assertEquals("two", numberVariable);
+        assertThat(numberVariable).isNotNull().isEqualTo("two");
 
-        assertEquals(KogitoProcessInstance.STATE_COMPLETED,
-                processInstance.getState());
+        assertThat(processInstance.getState()).isEqualTo(KogitoProcessInstance.STATE_COMPLETED);
     }
 
     private RuleFlowProcess getWorkItemProcess(String processId,
@@ -229,19 +222,15 @@ public class WorkItemTest extends AbstractBaseTest {
 
         StartNode startNode = new StartNode();
         startNode.setName("Start");
-        startNode.setId(1);
+        startNode.setId(one);
 
         WorkItemNode workItemNode = new WorkItemNode();
         workItemNode.setName("workItemNode");
-        workItemNode.setId(2);
-        workItemNode.addInMapping("Comment",
-                "Person.name");
-        workItemNode.addInMapping("Attachment",
-                "MyObject");
-        workItemNode.addOutMapping("Result",
-                "MyObject");
-        workItemNode.addOutMapping("Result.length()",
-                "Number");
+        workItemNode.setId(two);
+        workItemNode.getIoSpecification().addInputMapping("#{Person.name}", "Comment");
+        workItemNode.getIoSpecification().addInputMapping("MyObject", "Attachment");
+        workItemNode.getIoSpecification().addOutputMapping("Result", "MyObject");
+        workItemNode.getIoSpecification().addOutputMapping("Result.length()", "Number");
         Work work = new WorkImpl();
         work.setName(workName);
         Set<ParameterDefinition> parameterDefinitions = new HashSet<ParameterDefinition>();
@@ -255,15 +244,13 @@ public class WorkItemTest extends AbstractBaseTest {
                 new StringDataType());
         parameterDefinitions.add(parameterDefinition);
         work.setParameterDefinitions(parameterDefinitions);
-        work.setParameter("ActorId",
-                "#{UserName}");
-        work.setParameter("Content",
-                "#{Person.name}");
+        work.setParameter("ActorId", "#{UserName}");
+        work.setParameter("Content", "#{Person.name}");
         workItemNode.setWork(work);
 
         EndNode endNode = new EndNode();
         endNode.setName("End");
-        endNode.setId(3);
+        endNode.setId(three);
 
         connect(startNode,
                 workItemNode);

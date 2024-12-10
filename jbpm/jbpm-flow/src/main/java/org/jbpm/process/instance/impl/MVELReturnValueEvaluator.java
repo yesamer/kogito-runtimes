@@ -1,30 +1,32 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.impl;
 
-import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.io.Serializable;
 
+import org.drools.base.definitions.impl.KnowledgePackageImpl;
+import org.drools.base.definitions.rule.impl.RuleImpl;
+import org.drools.base.rule.accessor.GlobalResolver;
 import org.drools.core.common.InternalWorkingMemory;
-import org.drools.core.definitions.impl.KnowledgePackageImpl;
-import org.drools.core.definitions.rule.impl.RuleImpl;
-import org.drools.core.spi.GlobalResolver;
 import org.drools.mvel.MVELDialectRuntimeData;
 import org.drools.mvel.expr.MVELCompilationUnit;
 import org.drools.mvel.expr.MVELCompileable;
@@ -33,51 +35,35 @@ import org.kie.api.definition.KiePackage;
 import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
 import org.mvel2.integration.VariableResolverFactory;
 
-public class MVELReturnValueEvaluator
-        implements
-        ReturnValueEvaluator,
-        MVELCompileable,
-        Externalizable {
-    private static final long serialVersionUID = 510l;
+public class MVELReturnValueEvaluator extends AbstractReturnValueEvaluator implements MVELCompileable {
 
     private MVELCompilationUnit unit;
-    private String id;
 
-    private Serializable expr;
+    private Serializable compiledExpression;
 
-    public MVELReturnValueEvaluator() {
-    }
-
-    public MVELReturnValueEvaluator(final MVELCompilationUnit unit,
-            final String id) {
+    public MVELReturnValueEvaluator(MVELCompilationUnit unit) {
+        super("MVEL", unit.getExpression());
         this.unit = unit;
-        this.id = id;
     }
 
     public void readExternal(ObjectInput in) throws IOException,
             ClassNotFoundException {
-        id = in.readUTF();
         unit = (MVELCompilationUnit) in.readObject();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeUTF(id);
         out.writeObject(unit);
     }
 
     public void compile(MVELDialectRuntimeData data) {
-        expr = unit.getCompiledExpression(data);
+        compiledExpression = unit.getCompiledExpression(data);
     }
 
     public void compile(MVELDialectRuntimeData data, RuleImpl rule) {
-        expr = unit.getCompiledExpression(data);
+        compiledExpression = unit.getCompiledExpression(data);
     }
 
-    public String getDialect() {
-        return this.id;
-    }
-
-    public Object evaluate(KogitoProcessContext context) throws Exception {
+    public Object evaluate(KogitoProcessContext context) {
         int length = unit.getOtherIdentifiers().length;
         Object[] vars = new Object[length];
         if (unit.getOtherIdentifiers() != null) {
@@ -100,13 +86,11 @@ public class MVELReturnValueEvaluator
         // do we have any functions for this namespace?
         KiePackage pkg = context.getKieRuntime().getKieBase().getKiePackage("MAIN");
         if (pkg instanceof KnowledgePackageImpl) {
-            MVELDialectRuntimeData data = (MVELDialectRuntimeData) ((KnowledgePackageImpl) pkg).getDialectRuntimeRegistry().getDialectData(id);
+            MVELDialectRuntimeData data = (MVELDialectRuntimeData) ((KnowledgePackageImpl) pkg).getDialectRuntimeRegistry().getDialectData(dialect());
             factory.setNextFactory(data.getFunctionFactory());
         }
 
-        Object value = MVELProcessHelper.evaluator().executeExpression(this.expr,
-                null,
-                factory);
+        Object value = MVELProcessHelper.evaluator().executeExpression(compiledExpression, null, factory);
 
         if (!(value instanceof Boolean)) {
             throw new RuntimeException("Constraints must return boolean values: " +
@@ -115,14 +99,6 @@ public class MVELReturnValueEvaluator
         }
         return ((Boolean) value).booleanValue();
 
-    }
-
-    public Serializable getCompExpr() {
-        return expr;
-    }
-
-    public String toString() {
-        return this.unit.getExpression();
     }
 
 }

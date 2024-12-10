@@ -1,17 +1,20 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.compiler.canonical;
 
@@ -19,10 +22,10 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.drools.ruleunits.impl.AssignableChecker;
 import org.jbpm.workflow.core.node.RuleSetNode;
 import org.kie.internal.ruleunit.RuleUnitDescription;
 import org.kie.kogito.rules.RuleUnits;
-import org.kie.kogito.rules.units.AssignableChecker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -137,13 +140,13 @@ public class RuleUnitHandler {
             } else if (/* !procVarIsCollection && */ unitVarIsDataSource) {
                 // set data source to variable
                 Expression expression = variableScope.getVariable(procVar);
-                actionBody.addStatement(
-                        unit.injectScalar(unitVar, expression));
                 // subscribe to updates to that data source
                 actionBody.addStatement(
                         variableScope.assignVariable(procVar));
                 actionBody.addStatement(
                         unit.extractIntoScalar(unitVar, procVar));
+                actionBody.addStatement(
+                        unit.injectScalar(unitVar, expression));
             } else {
                 Expression expression = variableScope.getVariable(procVar);
                 actionBody.addStatement(unit.set(unitVar, expression));
@@ -156,7 +159,7 @@ public class RuleUnitHandler {
     }
 
     private Map<String, String> getInputMappings(ProcessContextMetaModel variableScope, RuleSetNode node) {
-        Map<String, String> entries = node.getInMappings();
+        Map<String, String> entries = node.getIoSpecification().getInputMapping();
         if (entries.isEmpty()) {
             entries = new HashMap<>();
             for (String varName : variableScope.getVariableNames()) {
@@ -205,9 +208,9 @@ public class RuleUnitHandler {
     }
 
     private Map<String, String> getOutputMappings(ProcessContextMetaModel variableScope, RuleSetNode node) {
-        Map<String, String> entries = node.getOutMappings();
+        Map<String, String> entries = node.getIoSpecification().getOutputMappingBySources();
         // if both are empty we use automatic binding, otherwise we do nothing
-        if (node.getInMappings().isEmpty() && entries.isEmpty()) {
+        if (node.getIoSpecification().getInputMapping().isEmpty() && entries.isEmpty()) {
             entries = new HashMap<>();
             for (String varName : variableScope.getVariableNames()) {
                 entries.put(varName, varName);

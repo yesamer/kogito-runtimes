@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.bpmn2.xml.di;
 
@@ -19,13 +22,13 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
-import org.drools.core.xml.BaseAbstractHandler;
-import org.drools.core.xml.ExtensibleXmlParser;
-import org.drools.core.xml.Handler;
 import org.jbpm.bpmn2.core.Definitions;
 import org.jbpm.bpmn2.xml.di.BPMNEdgeHandler.ConnectionInfo;
 import org.jbpm.bpmn2.xml.di.BPMNShapeHandler.NodeInfo;
+import org.jbpm.compiler.xml.Handler;
+import org.jbpm.compiler.xml.Parser;
 import org.jbpm.compiler.xml.ProcessBuildData;
+import org.jbpm.compiler.xml.core.BaseAbstractHandler;
 import org.jbpm.ruleflow.core.RuleFlowProcess;
 import org.jbpm.workflow.core.Node;
 import org.jbpm.workflow.core.impl.ConnectionImpl;
@@ -55,17 +58,16 @@ public class BPMNPlaneHandler extends BaseAbstractHandler implements Handler {
     }
 
     public Object start(final String uri, final String localName,
-            final Attributes attrs, final ExtensibleXmlParser parser)
+            final Attributes attrs, final Parser parser)
             throws SAXException {
         parser.startElementBuilder(localName, attrs);
 
         final String processRef = attrs.getValue("bpmnElement");
-        ProcessInfo info = new ProcessInfo(processRef);
-        return info;
+        return new ProcessInfo(processRef);
     }
 
     public Object end(final String uri, final String localName,
-            final ExtensibleXmlParser parser) throws SAXException {
+            final Parser parser) throws SAXException {
         parser.endElementBuilder();
         ProcessInfo processInfo = (ProcessInfo) parser.getCurrent();
         List<Process> processes = ((ProcessBuildData) parser.getData()).getProcesses();
@@ -95,7 +97,7 @@ public class BPMNPlaneHandler extends BaseAbstractHandler implements Handler {
             return false;
         }
         for (org.kie.api.definition.process.Node node : nodes) {
-            String id = (String) node.getMetaData().get("UniqueId");
+            String id = node.getUniqueId();
             if (nodeInfo.getNodeRef().equals(id)) {
                 ((Node) node).setMetaData("x", nodeInfo.getX());
                 ((Node) node).setMetaData("y", nodeInfo.getY());
@@ -133,7 +135,7 @@ public class BPMNPlaneHandler extends BaseAbstractHandler implements Handler {
         for (org.kie.api.definition.process.Node node : nodes) {
             for (List<Connection> connections : node.getOutgoingConnections().values()) {
                 for (Connection connection : connections) {
-                    String id = (String) connection.getMetaData().get("UniqueId");
+                    String id = connection.getUniqueId();
                     if (id != null && id.equals(connectionInfo.getElementRef())) {
                         ((ConnectionImpl) connection).setMetaData(
                                 "bendpoints", connectionInfo.getBendpoints());
@@ -158,8 +160,8 @@ public class BPMNPlaneHandler extends BaseAbstractHandler implements Handler {
     public static class ProcessInfo {
 
         private String processRef;
-        private List<NodeInfo> nodeInfos = new ArrayList<NodeInfo>();
-        private List<ConnectionInfo> connectionInfos = new ArrayList<ConnectionInfo>();
+        private List<NodeInfo> nodeInfos = new ArrayList<>();
+        private List<ConnectionInfo> connectionInfos = new ArrayList<>();
 
         public ProcessInfo(String processRef) {
             this.processRef = processRef;

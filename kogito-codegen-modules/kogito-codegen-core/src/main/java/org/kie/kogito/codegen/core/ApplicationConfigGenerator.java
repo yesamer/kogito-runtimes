@@ -1,39 +1,45 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.core;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.drools.codegen.common.GeneratedFile;
 import org.kie.kogito.Addons;
 import org.kie.kogito.codegen.api.ConfigGenerator;
-import org.kie.kogito.codegen.api.GeneratedFile;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
+import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
 import org.kie.kogito.codegen.api.template.InvalidTemplateException;
 import org.kie.kogito.codegen.api.template.TemplatedGenerator;
 
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
-import com.github.javaparser.ast.stmt.ExplicitConstructorInvocationStmt;
+import com.github.javaparser.ast.stmt.BlockStmt;
 
 import static org.kie.kogito.codegen.core.CodegenUtils.newObject;
 
@@ -45,7 +51,7 @@ public class ApplicationConfigGenerator {
     private final TemplatedGenerator templatedGenerator;
     private KogitoBuildContext context;
 
-    private Collection<String> addons = Collections.emptyList();
+    private Set<String> addons = Collections.emptySet();
 
     private final Collection<ConfigGenerator> configGenerators = new ArrayList<>();
 
@@ -55,7 +61,9 @@ public class ApplicationConfigGenerator {
                 .build(context, CLASS_NAME);
         this.context = context;
 
-        this.configGenerators.add(new ConfigBeanGenerator(context));
+        if (!QuarkusKogitoBuildContext.CONTEXT_NAME.equals(context.name())) {
+            this.configGenerators.add(new ConfigBeanGenerator(context));
+        }
     }
 
     public ApplicationConfigGenerator addConfigGenerator(ConfigGenerator configGenerator) {
@@ -74,6 +82,10 @@ public class ApplicationConfigGenerator {
 
         generatedFiles.add(generateApplicationConfigDescriptor(configClassNames));
 
+        if (context.hasDI() && context.hasRESTGloballyAvailable()) {
+            generatedFiles.add(ObjectMapperGenerator.generate(context));
+        }
+
         return generatedFiles;
     }
 
@@ -91,7 +103,7 @@ public class ApplicationConfigGenerator {
                             templatedGenerator,
                             "Compilation unit doesn't contain a class or interface declaration!"));
 
-            initConfigs(getSuperStatement(cls), configClassNames);
+            initConfigs(getInitStatement(cls), configClassNames);
         }
 
         return new GeneratedFile(ConfigGenerator.APPLICATION_CONFIG_TYPE,
@@ -115,7 +127,7 @@ public class ApplicationConfigGenerator {
     }
 
     private ObjectCreationExpr generateAddonsList() {
-        MethodCallExpr asListOfAddons = new MethodCallExpr(new NameExpr("java.util.Arrays"), "asList");
+        MethodCallExpr asListOfAddons = new MethodCallExpr(new NameExpr("java.util.Set"), "of");
         for (String addon : addons) {
             asListOfAddons.addArgument(new StringLiteralExpr(addon));
         }
@@ -123,12 +135,12 @@ public class ApplicationConfigGenerator {
         return newObject(Addons.class, asListOfAddons);
     }
 
-    public void withAddons(Collection<String> addons) {
+    public void withAddons(Set<String> addons) {
         this.addons = addons;
     }
 
-    private ExplicitConstructorInvocationStmt getSuperStatement(ClassOrInterfaceDeclaration cls) {
-        return cls.findFirst(ExplicitConstructorInvocationStmt.class)
+    private BlockStmt getInitStatement(ClassOrInterfaceDeclaration cls) {
+        return cls.findFirst(ConstructorDeclaration.class).map(ConstructorDeclaration::getBody)
                 .orElseThrow(() -> new InvalidTemplateException(
                         templatedGenerator,
                         "Impossible to find super invocation"));
@@ -143,10 +155,13 @@ public class ApplicationConfigGenerator {
      * @param superInvocation
      * @param configClassNames
      */
-    private void initConfigs(ExplicitConstructorInvocationStmt superInvocation, Collection<String> configClassNames) {
-        configClassNames.stream()
-                .map(config -> new ObjectCreationExpr()
-                        .setType(config))
-                .forEach(superInvocation::addArgument);
+    private void initConfigs(BlockStmt initInvocation, Collection<String> configClassNames) {
+        initInvocation.findFirst(MethodCallExpr.class).ifPresent(call -> {
+            configClassNames
+                    .stream()
+                    .map(config -> new ObjectCreationExpr().setType(config))
+                    .forEach(call::addArgument);
+        });
+
     }
 }

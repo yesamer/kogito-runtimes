@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.decision;
 
@@ -23,7 +26,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Supplier;
 
-import org.drools.core.util.StringUtils;
+import org.drools.util.StringUtils;
 import org.kie.dmn.api.core.DMNModel;
 import org.kie.dmn.api.core.DMNType;
 import org.kie.dmn.feel.codegen.feel11.CodegenStringUtil;
@@ -58,6 +61,8 @@ import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 
 import static com.github.javaparser.StaticJavaParser.parseStatement;
+import static java.util.function.Predicate.not;
+import static org.kie.kogito.codegen.decision.CodegenUtils.getDefinitionsFileFromModel;
 
 public class DecisionRestResourceGenerator {
 
@@ -180,6 +185,7 @@ public class DecisionRestResourceGenerator {
 
         if (context.getAddonsConfig().useMonitoring()) {
             addMonitoringImports(clazz);
+            addMonitoringFields(template);
             addExceptionMetricsLogging(clazz, nameURL);
             addMonitoringToMethod(dmnMethod, nameURL);
         }
@@ -198,28 +204,30 @@ public class DecisionRestResourceGenerator {
             inputRef = withOASResult.getNamingPolicy().getRef(identifyInputSet);
             outputRef = withOASResult.getNamingPolicy().getRef(identifyOutputSet);
         }
-        final String DMN_DEFINITIONS_JSON = "/dmnDefinitions.json";
+        final String DMN_DEFINITIONS_JSON = "/" + getDefinitionsFileFromModel(dmnModel);
         // MP / Quarkus
+        final String Q_CTX_PATH = context.getApplicationProperty("quarkus.http.root-path").filter(not("/"::equals)).orElse("");
         processAnnForRef(dmnMethod,
                 "org.eclipse.microprofile.openapi.annotations.parameters.RequestBody",
                 "org.eclipse.microprofile.openapi.annotations.media.Schema",
-                DMN_DEFINITIONS_JSON + inputRef,
+                Q_CTX_PATH + DMN_DEFINITIONS_JSON + inputRef,
                 !mpAnnPresent);
         processAnnForRef(dmnMethod,
                 "org.eclipse.microprofile.openapi.annotations.responses.APIResponse",
                 "org.eclipse.microprofile.openapi.annotations.media.Schema",
-                DMN_DEFINITIONS_JSON + outputRef,
+                Q_CTX_PATH + DMN_DEFINITIONS_JSON + outputRef,
                 !mpAnnPresent);
         // io.swagger / SB
+        final String SB_CTX_PATH = context.getApplicationProperty("server.servlet.context-path").filter(not("/"::equals)).orElse("");
         processAnnForRef(dmnMethod,
                 "io.swagger.v3.oas.annotations.parameters.RequestBody",
                 "io.swagger.v3.oas.annotations.media.Schema",
-                DMN_DEFINITIONS_JSON + inputRef,
+                SB_CTX_PATH + DMN_DEFINITIONS_JSON + inputRef,
                 !swaggerAnnPresent);
         processAnnForRef(dmnMethod,
                 "io.swagger.v3.oas.annotations.responses.ApiResponse",
                 "io.swagger.v3.oas.annotations.media.Schema",
-                DMN_DEFINITIONS_JSON + outputRef,
+                SB_CTX_PATH + DMN_DEFINITIONS_JSON + outputRef,
                 !swaggerAnnPresent);
     }
 
@@ -278,13 +286,14 @@ public class DecisionRestResourceGenerator {
 
         interpolateRequestPath(pathName, placeHolder, clonedDmnMethod);
 
-        ReturnStmt returnStmt = clonedDmnMethod.findFirst(ReturnStmt.class).orElseThrow(TEMPLATE_WAS_MODIFIED);
-        returnStmt.setExpression(new MethodCallExpr("buildDMNResultResponse").addArgument(new NameExpr("result")));
+        MethodCallExpr methodCallExpr = clonedDmnMethod.findFirst(MethodCallExpr.class, mce -> mce.getNameAsString().equals("enrichResponseHeaders")).orElseThrow(TEMPLATE_WAS_MODIFIED);
+        methodCallExpr.setName("buildDMNResultResponse").setArguments(NodeList.nodeList(new NameExpr("result")));
         return clonedDmnMethod;
     }
 
     private void interpolateRequestPath(String pathName, String placeHolder, MethodDeclaration clonedDmnMethod) {
         clonedDmnMethod.getAnnotations().stream()
+                .filter(a -> a.getNameAsString().endsWith("Path") || a.getNameAsString().endsWith("PostMapping")) // e.g.: @jakarta.ws.rs.Path("/DSn/dmnresult") or @org.springframework.web.bind.annotation.PostMapping(value = "$dmnMethodUrl$", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
                 .flatMap(a -> a.findAll(StringLiteralExpr.class).stream())
                 .forEach(vv -> {
                     String s = vv.getValue();
@@ -333,25 +342,35 @@ public class DecisionRestResourceGenerator {
         String methodArgumentName = method.getParameters().get(0).getNameAsString();
         statements.addBefore(
                 parseStatement(String.format(
-                        "SystemMetricsCollector.registerException(\"%s\", %s.getMessages().stream().filter(x -> org.kie.dmn.api.core.DMNMessage.Severity.ERROR.equals(x.getSeverity())).map(x -> x.getMessage()).collect(Collectors.joining(\",\")));",
+                        "systemMetricsCollectorProvider.get().registerException(\"%s\", %s.getMessages().stream().filter(x -> org.kie.dmn.api.core.DMNMessage.Severity.ERROR.equals(x.getSeverity())).map(x -> x.getMessage()).collect(Collectors.joining(\",\")));",
                         nameURL,
                         methodArgumentName)),
                 returnStmt);
     }
 
     private void addMonitoringImports(CompilationUnit cu) {
-        cu.addImport(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.SystemMetricsCollector"), false, false));
-        cu.addImport(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.DMNResultMetricsBuilder"), false, false));
-        cu.addImport(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.SystemMetricsCollector"), false, false));
+        cu.getImports().add(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.SystemMetricsCollector"), false, false));
+        cu.getImports().add(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.DMNResultMetricsBuilder"), false, false));
+        cu.getImports().add(new ImportDeclaration(new Name("org.kie.kogito.monitoring.core.common.system.metrics.SystemMetricsCollectorProvider"), false, false));
+    }
+
+    private void addMonitoringFields(ClassOrInterfaceDeclaration template) {
+        FieldDeclaration field =
+                template.addField("SystemMetricsCollectorProvider", "systemMetricsCollectorProvider");
+        if (context.hasDI()) {
+            context.getDependencyInjectionAnnotator().withInjection(field);
+        }
     }
 
     private void addMonitoringToMethod(MethodDeclaration method, String nameURL) {
-        BlockStmt body = method.getBody().orElseThrow(() -> new NoSuchElementException("This method should be invoked only with concrete classes and not with abstract methods or interfaces."));
+        MethodCallExpr methodCallExpr = method.findFirst(MethodCallExpr.class, mce -> mce.getNameAsString().equals("enrichResponseHeaders")).orElseThrow(TEMPLATE_WAS_MODIFIED);
+        BlockStmt body = methodCallExpr.findAncestor(BlockStmt.class)
+                .orElseThrow(() -> new NoSuchElementException("This method should be invoked only with concrete classes and not with abstract methods or interfaces."));
         NodeList<Statement> statements = body.getStatements();
         ReturnStmt returnStmt = body.findFirst(ReturnStmt.class).orElseThrow(() -> new NoSuchElementException("Return statement not found: can't add monitoring to endpoint. Template was modified."));
         statements.addFirst(parseStatement("long startTime = System.nanoTime();"));
         statements.addBefore(parseStatement("long endTime = System.nanoTime();"), returnStmt);
-        statements.addBefore(parseStatement("SystemMetricsCollector.registerElapsedTimeSampleMetrics(\"" + nameURL + "\", endTime - startTime);"), returnStmt);
+        statements.addBefore(parseStatement("systemMetricsCollectorProvider.get().registerElapsedTimeSampleMetrics(\"" + nameURL + "\", endTime - startTime);"), returnStmt);
     }
 
     private void initializeApplicationField(FieldDeclaration fd) {

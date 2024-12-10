@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.workflow.core.impl;
 
@@ -19,19 +22,23 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.regex.Matcher;
 
+import org.jbpm.process.core.correlation.CorrelationManager;
 import org.jbpm.process.core.impl.ProcessImpl;
 import org.jbpm.process.instance.ProcessInstance;
 import org.jbpm.util.PatternConstants;
 import org.jbpm.workflow.core.Node;
+import org.jbpm.workflow.core.WorkflowModelValidator;
 import org.jbpm.workflow.core.WorkflowProcess;
 import org.jbpm.workflow.core.node.StartNode;
 import org.jbpm.workflow.instance.WorkflowProcessInstance;
 import org.jbpm.workflow.instance.impl.MVELProcessHelper;
 import org.jbpm.workflow.instance.impl.ProcessInstanceResolverFactory;
 import org.kie.api.definition.process.NodeContainer;
+import org.kie.api.definition.process.WorkflowElementIdentifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,12 +53,15 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
 
     private boolean autoComplete = false;
     private boolean dynamic = false;
+    private WorkflowModelValidator inputValidator;
+    private WorkflowModelValidator outputValidator;
     private org.jbpm.workflow.core.NodeContainer nodeContainer;
+    private String exprLanguage;
 
     private transient BiFunction<String, ProcessInstance, String> expressionEvaluator = (expression, p) -> {
 
         String evaluatedValue = expression;
-        Map<String, String> replacements = new HashMap<String, String>();
+        Map<String, String> replacements = new HashMap<>();
         Matcher matcher = PatternConstants.PARAMETER_MATCHER.matcher(evaluatedValue);
         while (matcher.find()) {
             String paramName = matcher.group(1);
@@ -60,7 +70,7 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
                     String value = (String) MVELProcessHelper.evaluator()
                             .eval(paramName, new ProcessInstanceResolverFactory(((WorkflowProcessInstance) p)));
                     replacements.put(paramName, value);
-                } catch (Throwable t) {
+                } catch (Exception t) {
                     logger.error("Could not resolve, parameter {} while evaluating expression {}", paramName, expression, t);
                 }
             }
@@ -73,6 +83,12 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
 
     };
 
+    private CorrelationManager correlationManager = new CorrelationManager();
+
+    public CorrelationManager getCorrelationManager() {
+        return correlationManager;
+    }
+
     public WorkflowProcessImpl() {
         nodeContainer = (org.jbpm.workflow.core.NodeContainer) createNodeContainer();
     }
@@ -81,11 +97,13 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         return new NodeContainerImpl();
     }
 
+    @Override
     public org.kie.api.definition.process.Node[] getNodes() {
         return nodeContainer.getNodes();
     }
 
-    public org.kie.api.definition.process.Node getNode(final long id) {
+    @Override
+    public org.kie.api.definition.process.Node getNode(WorkflowElementIdentifier id) {
         return nodeContainer.getNode(id);
     }
 
@@ -94,7 +112,8 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         throw new UnsupportedOperationException();
     }
 
-    public org.kie.api.definition.process.Node internalGetNode(long id) {
+    @Override
+    public org.kie.api.definition.process.Node internalGetNode(WorkflowElementIdentifier id) {
         try {
             return getNode(id);
         } catch (IllegalArgumentException e) {
@@ -106,16 +125,19 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         }
     }
 
+    @Override
     public void removeNode(final org.kie.api.definition.process.Node node) {
         nodeContainer.removeNode(node);
         ((Node) node).setParentContainer(null);
     }
 
+    @Override
     public void addNode(final org.kie.api.definition.process.Node node) {
         nodeContainer.addNode(node);
         ((Node) node).setParentContainer(this);
     }
 
+    @Override
     public boolean isAutoComplete() {
         return autoComplete;
     }
@@ -124,6 +146,7 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         this.autoComplete = autoComplete;
     }
 
+    @Override
     public boolean isDynamic() {
         return dynamic;
     }
@@ -159,9 +182,10 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         }
     }
 
-    protected org.kie.api.definition.process.Node getContainerNode(org.kie.api.definition.process.Node currentNode, org.jbpm.workflow.core.NodeContainer nodeContainer, long nodeId) {
+    protected org.kie.api.definition.process.Node getContainerNode(org.kie.api.definition.process.Node currentNode, org.jbpm.workflow.core.NodeContainer nodeContainer,
+            WorkflowElementIdentifier nodeId) {
         for (org.kie.api.definition.process.Node node : nodeContainer.getNodes()) {
-            if (nodeId == node.getId()) {
+            if (nodeId.equals(node.getId())) {
                 return currentNode;
             } else {
                 if (node instanceof org.jbpm.workflow.core.NodeContainer) {
@@ -172,14 +196,14 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         return null;
     }
 
-    public org.kie.api.definition.process.Node getParentNode(long nodeId) {
+    public org.kie.api.definition.process.Node getParentNode(WorkflowElementIdentifier nodeId) {
         return getContainerNode(null, nodeContainer, nodeId);
     }
 
     public List<StartNode> getTimerStart() {
         org.kie.api.definition.process.Node[] nodes = getNodes();
 
-        List<StartNode> timerStartNodes = new ArrayList<StartNode>();
+        List<StartNode> timerStartNodes = new ArrayList<>();
         for (int i = 0; i < nodes.length; i++) {
             if (nodes[i] instanceof StartNode && ((StartNode) nodes[i]).getTimer() != null) {
                 timerStartNodes.add((StartNode) nodes[i]);
@@ -189,11 +213,41 @@ public class WorkflowProcessImpl extends ProcessImpl implements WorkflowProcess,
         return timerStartNodes;
     }
 
+    @Override
     public void setExpressionEvaluator(BiFunction<String, ProcessInstance, String> expressionEvaluator) {
         this.expressionEvaluator = expressionEvaluator;
     }
 
+    @Override
     public String evaluateExpression(String metaData, ProcessInstance processInstance) {
         return this.expressionEvaluator.apply(metaData, processInstance);
+    }
+
+    @Override
+    public Optional<WorkflowModelValidator> getInputValidator() {
+        return Optional.ofNullable(inputValidator);
+    }
+
+    @Override
+    public void setInputValidator(WorkflowModelValidator inputValidator) {
+        this.inputValidator = inputValidator;
+    }
+
+    @Override
+    public Optional<WorkflowModelValidator> getOutputValidator() {
+        return Optional.ofNullable(outputValidator);
+    }
+
+    @Override
+    public void setOutputValidator(WorkflowModelValidator outputValidator) {
+        this.outputValidator = outputValidator;
+    }
+
+    public void setExpressionLanguage(String exprLanguage) {
+        this.exprLanguage = exprLanguage;
+    }
+
+    public String getExpressionLanguage() {
+        return exprLanguage;
     }
 }

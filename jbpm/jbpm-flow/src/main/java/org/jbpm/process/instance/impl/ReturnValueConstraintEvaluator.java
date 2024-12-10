@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.impl;
 
@@ -20,10 +23,9 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 
-import org.drools.core.spi.CompiledInvoker;
-import org.drools.core.spi.KogitoProcessContextImpl;
-import org.drools.core.spi.Wireable;
-import org.jbpm.process.instance.ProcessInstance;
+import org.drools.base.rule.accessor.CompiledInvoker;
+import org.drools.base.rule.accessor.Wireable;
+import org.jbpm.util.ContextFactory;
 import org.jbpm.workflow.core.Constraint;
 import org.jbpm.workflow.instance.NodeInstance;
 import org.kie.api.definition.process.Connection;
@@ -53,58 +55,72 @@ public class ReturnValueConstraintEvaluator
 
     private ReturnValueEvaluator evaluator;
 
+    @Override
     public String getConstraint() {
         return this.constraint;
     }
 
+    @Override
     public void setConstraint(final String constraint) {
         this.constraint = constraint;
     }
 
+    @Override
     public String getName() {
         return this.name;
     }
 
+    @Override
     public void setName(final String name) {
         this.name = name;
     }
 
+    @Override
     public String toString() {
         return this.name;
     }
 
+    @Override
     public int getPriority() {
         return this.priority;
     }
 
+    @Override
     public void setPriority(final int priority) {
         this.priority = priority;
     }
 
+    @Override
     public String getDialect() {
         return dialect;
     }
 
+    @Override
     public void setDialect(String dialect) {
         this.dialect = dialect;
     }
 
+    @Override
     public String getType() {
         return type;
     }
 
+    @Override
     public void setType(String type) {
         this.type = type;
     }
 
+    @Override
     public boolean isDefault() {
         return isDefault;
     }
 
+    @Override
     public void setDefault(boolean isDefault) {
         this.isDefault = isDefault;
     }
 
+    @Override
     public void wire(Object object) {
         setEvaluator((ReturnValueEvaluator) object);
     }
@@ -117,14 +133,13 @@ public class ReturnValueConstraintEvaluator
         return this.evaluator;
     }
 
+    @Override
     public boolean evaluate(NodeInstance instance,
             Connection connection,
             Constraint constraint) {
         Object value;
         try {
-            KogitoProcessContextImpl context = new KogitoProcessContextImpl(((ProcessInstance) instance.getProcessInstance()).getKnowledgeRuntime());
-            context.setNodeInstance(instance);
-            value = this.evaluator.evaluate(context);
+            value = this.evaluator.evaluate(ContextFactory.fromNode(instance));
         } catch (Exception e) {
             throw new RuntimeException("unable to execute ReturnValueEvaluator: ",
                     e);
@@ -135,6 +150,7 @@ public class ReturnValueConstraintEvaluator
         return ((Boolean) value).booleanValue();
     }
 
+    @Override
     public void readExternal(ObjectInput in) throws IOException,
             ClassNotFoundException {
         this.evaluator = (ReturnValueEvaluator) in.readObject();
@@ -146,6 +162,7 @@ public class ReturnValueConstraintEvaluator
 
     }
 
+    @Override
     public void writeExternal(ObjectOutput out) throws IOException {
         if (this.evaluator instanceof CompiledInvoker) {
             out.writeObject(null);
@@ -159,10 +176,12 @@ public class ReturnValueConstraintEvaluator
         out.writeObject(type);
     }
 
+    @Override
     public void setMetaData(String name, Object value) {
         // Do nothing
     }
 
+    @Override
     public Object getMetaData(String name) {
         return null;
     }

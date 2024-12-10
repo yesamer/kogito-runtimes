@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen.sample.generator;
 
@@ -26,10 +29,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.drools.codegen.common.GeneratedFile;
 import org.kie.api.io.Resource;
 import org.kie.kogito.codegen.api.ApplicationSection;
 import org.kie.kogito.codegen.api.ConfigGenerator;
-import org.kie.kogito.codegen.api.GeneratedFile;
 import org.kie.kogito.codegen.api.Generator;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.api.context.impl.QuarkusKogitoBuildContext;
@@ -68,8 +71,13 @@ public class SampleCodegen implements Generator {
     }
 
     @Override
+    public boolean isEmpty() {
+        return sampleResources.isEmpty();
+    }
+
+    @Override
     public Collection<GeneratedFile> generate() {
-        if (sampleResources.isEmpty()) {
+        if (isEmpty()) {
             return Collections.emptyList();
         }
 
@@ -87,7 +95,7 @@ public class SampleCodegen implements Generator {
                     SampleCodegen::isSampleRuntimeField).forEach(SampleCodegen::initializeSampleRuntimeField);
         }
 
-        return context.hasREST() ? Collections.singleton(new GeneratedFile(REST_TYPE, generator.generatedFilePath(), compilationUnit.toString())) : Collections.emptyList();
+        return context.hasRESTForGenerator(this) ? Collections.singleton(new GeneratedFile(REST_TYPE, generator.generatedFilePath(), compilationUnit.toString())) : Collections.emptyList();
     }
 
     @Override
@@ -131,7 +139,6 @@ public class SampleCodegen implements Generator {
     }
 
     private static void initializeSampleRuntimeField(FieldDeclaration fd) {
-        // new SampleRuntime(new Application());
         fd.getVariable(0).setInitializer(new ObjectCreationExpr().setType(SampleContainerGenerator.SAMPLE_RUNTIME_CLASSNAME)
                 .addArgument(new ObjectCreationExpr().setType("Application")));
     }

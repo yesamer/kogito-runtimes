@@ -1,17 +1,20 @@
 /*
- * Copyright 2021 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.kie.kogito.codegen;
 
@@ -22,30 +25,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.drools.ruleunits.api.DataHandle;
+import org.drools.ruleunits.api.DataObserver;
+import org.drools.ruleunits.api.DataSource;
+import org.drools.ruleunits.api.DataStore;
+import org.drools.ruleunits.api.RuleUnit;
+import org.drools.ruleunits.api.RuleUnitInstance;
+import org.drools.ruleunits.impl.InternalRuleUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.kie.api.time.SessionPseudoClock;
 import org.kie.internal.builder.conf.PropertySpecificOption;
 import org.kie.kogito.Application;
 import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.data.Address;
 import org.kie.kogito.codegen.data.Person;
+import org.kie.kogito.codegen.data.StockTick;
+import org.kie.kogito.codegen.data.ValueDrop;
 import org.kie.kogito.codegen.rules.RuleCodegenError;
 import org.kie.kogito.codegen.rules.multiunit.MultiUnit;
 import org.kie.kogito.codegen.rules.singleton.Datum;
 import org.kie.kogito.codegen.rules.singleton.Singleton;
 import org.kie.kogito.codegen.unit.AdultUnit;
 import org.kie.kogito.codegen.unit.PersonsUnit;
-import org.kie.kogito.rules.DataHandle;
-import org.kie.kogito.rules.DataObserver;
-import org.kie.kogito.rules.DataSource;
-import org.kie.kogito.rules.DataStore;
-import org.kie.kogito.rules.RuleUnit;
-import org.kie.kogito.rules.RuleUnitInstance;
-import org.kie.kogito.rules.RuleUnitQuery;
+import org.kie.kogito.codegen.unit.StockUnit;
 import org.kie.kogito.rules.RuleUnits;
 
 import static java.util.Arrays.asList;
-import static java.util.stream.Collectors.toList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +62,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnit() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnit.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnit.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -81,7 +88,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnitModify() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnitModify.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnitModify.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -98,7 +105,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnitDelete() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnitDelete.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnitDelete.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -118,7 +125,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnitQuery() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnitQuery.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnitQuery.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -129,10 +136,10 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
         RuleUnit<AdultUnit> unit = application.get(RuleUnits.class).create(AdultUnit.class);
         RuleUnitInstance<AdultUnit> instance = unit.createInstance(adults);
 
-        Class<? extends RuleUnitQuery<List<String>>> queryClass = (Class<? extends RuleUnitQuery<List<String>>>) application.getClass()
+        Class<?> queryClass = application.getClass()
                 .getClassLoader().loadClass("org.kie.kogito.codegen.unit.AdultUnitQueryFindAdults");
 
-        List<String> results = instance.executeQuery(queryClass);
+        List<String> results = (List<String>) queryClass.getMethod("execute", RuleUnitInstance.class).invoke(null, instance);
 
         assertEquals(2, results.size());
         assertTrue(results.containsAll(asList("Mario", "Marilena")));
@@ -140,7 +147,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnitQueryOnPrimitive() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnitQuery.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnitQuery.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -151,11 +158,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
         RuleUnit<AdultUnit> unit = application.get(RuleUnits.class).create(AdultUnit.class);
         RuleUnitInstance<AdultUnit> instance = unit.createInstance(adults);
 
-        List<Integer> results = instance.executeQuery("FindAdultsAge")
-                .stream()
-                .map(m -> m.get("$age"))
-                .map(Integer.class::cast)
-                .collect(toList());
+        List<Object> results = instance.executeQuery("FindAdultsAge").toList("$age");
 
         assertEquals(2, results.size());
         assertTrue(results.containsAll(asList(45, 47)));
@@ -163,7 +166,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnitQueryWithNoRules() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnitQueryNoRules.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnitQueryNoRules.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -174,11 +177,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
         RuleUnit<AdultUnit> unit = application.get(RuleUnits.class).create(AdultUnit.class);
         RuleUnitInstance<AdultUnit> instance = unit.createInstance(adults);
 
-        List<Integer> results = instance.executeQuery("FindAdultsAge")
-                .stream()
-                .map(m -> m.get("$sum"))
-                .map(Integer.class::cast)
-                .collect(toList());
+        List<Object> results = instance.executeQuery("FindAdultsAge").toList("$sum");
 
         assertEquals(1, results.size());
         assertThat(results).containsExactlyInAnyOrder(99);
@@ -186,7 +185,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void testRuleUnitExecutor() throws Exception {
-        Application application = generateCodeRulesOnly(
+        Application application = createApplication(
                 "org/kie/kogito/codegen/unit/RuleUnit.drl",
                 "org/kie/kogito/codegen/unit/PersonsUnit.drl");
 
@@ -198,10 +197,10 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
         RuleUnit<AdultUnit> adultUnit = application.get(RuleUnits.class).create(AdultUnit.class);
 
         AdultUnit adultData18 = new AdultUnit(persons, 18);
-        RuleUnitInstance<AdultUnit> adultUnitInstance18 = adultUnit.createInstance(adultData18, "adult18");
+        RuleUnitInstance<AdultUnit> adultUnitInstance18 = ((InternalRuleUnit) adultUnit).createInstance(adultData18, "adult18");
 
         AdultUnit adultData21 = new AdultUnit(persons, 21);
-        RuleUnitInstance<AdultUnit> adultUnitInstance21 = adultUnit.createInstance(adultData21, "adult21");
+        RuleUnitInstance<AdultUnit> adultUnitInstance21 = ((InternalRuleUnit) adultUnit).createInstance(adultData21, "adult21");
 
         RuleUnit<PersonsUnit> personsUnit = application.get(RuleUnits.class).create(PersonsUnit.class);
         personsUnit.createInstance(new PersonsUnit(persons)).fire();
@@ -214,7 +213,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void generateSinglePackageSingleUnit() throws Exception {
-        Application application = generateCodeRulesOnly(
+        Application application = createApplication(
                 "org/kie/kogito/codegen/rules/multiunit/MultiUnit.drl",
                 "org/kie/kogito/codegen/rules/multiunit/MultiUnit2.drl");
 
@@ -236,8 +235,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void singletonStore() throws Exception {
-        Application application = generateCodeRulesOnly(
-                "org/kie/kogito/codegen/rules/singleton/Singleton.drl");
+        Application application = createApplication("org/kie/kogito/codegen/rules/singleton/Singleton.drl");
 
         ArrayList<String> data = new ArrayList<>();
         AtomicReference<Datum> lastSeen = new AtomicReference<>();
@@ -264,7 +262,7 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
 
     @Test
     public void test2PatternsOopath() throws Exception {
-        Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/TwoPatternsQuery.drl");
+        Application application = createApplication("org/kie/kogito/codegen/unit/TwoPatternsQuery.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -282,20 +280,16 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
         RuleUnit<AdultUnit> unit = application.get(RuleUnits.class).create(AdultUnit.class);
         RuleUnitInstance<AdultUnit> instance = unit.createInstance(adults);
 
-        List<Person> results = instance.executeQuery("FindPeopleInMilano")
-                .stream()
-                .map(m -> m.get("$p"))
-                .map(Person.class::cast)
-                .collect(toList());
+        List<Object> results = instance.executeQuery("FindPeopleInMilano").toList("$p");
 
         assertEquals(1, results.size());
-        assertEquals("Mario", results.get(0).getName());
+        assertEquals("Mario", ((Person) results.get(0)).getName());
     }
 
     @Test
     public void testRuleUnitWithNoBindQueryShouldntCompile() throws Exception {
         try {
-            Application application = generateCodeRulesOnly("org/kie/kogito/codegen/unit/RuleUnitNoBindQuery.drl");
+            Application application = createApplication("org/kie/kogito/codegen/unit/RuleUnitNoBindQuery.drl");
             fail("A query without binding shouldn't compile");
         } catch (RuleCodegenError e) {
             // ignore
@@ -303,27 +297,31 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
     }
 
     @Test
-    public void testRuleUnitNoPropertyReactivity() throws Exception {
-        // KOGITO-5101
-        checckPropertyReactvity(false);
+    public void testCep() throws Exception {
+        Application application = createApplication("org/kie/kogito/codegen/unit/Stock.drl");
+
+        StockUnit stockUnit = new StockUnit();
+        RuleUnit<StockUnit> unit = application.get(RuleUnits.class).create(StockUnit.class);
+        RuleUnitInstance<StockUnit> instance = unit.createInstance(stockUnit);
+
+        stockUnit.getStockTicks().append(new StockTick("IBM", 2000, 100));
+        stockUnit.getStockTicks().append(new StockTick("IBM", 1700, 170));
+        stockUnit.getStockTicks().append(new StockTick("IBM", 1500, 240));
+
+        ValueDrop valueDrop = (ValueDrop) instance.executeQuery("highestValueDrop", "IBM").iterator().next().get("$s");
+        assertEquals(300, valueDrop.getDropAmount());
     }
 
-    @Test
-    public void testRuleUnitWithPropertyReactivity() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = { true, false })
+    public void checckPropertyReactvity(boolean usePropertyReactivity) throws Exception {
         // KOGITO-5101
-        checckPropertyReactvity(true);
-    }
-
-    private void checckPropertyReactvity(boolean usePropertyReactivity) throws Exception {
         KogitoBuildContext context = newContext();
         if (!usePropertyReactivity) {
             context.setApplicationProperty(PropertySpecificOption.PROPERTY_NAME, PropertySpecificOption.DISABLED.toString());
         }
 
-        Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
-        resourcesTypeMap.put(TYPE.RULES, Arrays.asList("org/kie/kogito/codegen/unit/RuleUnitNoPropReact.drl"));
-
-        Application application = generateCode(resourcesTypeMap, context);
+        Application application = createApplication(context, "org/kie/kogito/codegen/unit/RuleUnitNoPropReact.drl");
 
         AdultUnit adults = new AdultUnit();
 
@@ -336,5 +334,17 @@ public class RuleUnitCompilerIT extends AbstractCodegenIT {
         instance.fire();
 
         assertEquals(usePropertyReactivity ? 46 : 50, mario.getAge());
+    }
+
+    private Application createApplication(String... drls) throws Exception {
+        KogitoBuildContext context = newContext();
+        return createApplication(context, drls);
+    }
+
+    private Application createApplication(KogitoBuildContext context, String... drls) throws Exception {
+        Map<TYPE, List<String>> resourcesTypeMap = new HashMap<>();
+        resourcesTypeMap.put(TYPE.RULES, Arrays.asList(drls));
+        Application application = generateCode(resourcesTypeMap, context);
+        return application;
     }
 }

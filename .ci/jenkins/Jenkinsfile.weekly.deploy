@@ -1,0 +1,265 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+import org.jenkinsci.plugins.workflow.libs.Library
+@Library('jenkins-pipeline-shared-libraries')_
+
+import org.kie.jenkins.MavenCommand
+import org.kie.jenkins.MavenStagingHelper
+
+deployProperties = [:]
+
+pipeline {
+    agent {
+        docker {
+            image env.AGENT_DOCKER_BUILDER_IMAGE
+            args env.AGENT_DOCKER_BUILDER_ARGS
+            label util.avoidFaultyNodes()
+        }
+    }
+
+    options {
+        timestamps()
+        timeout(time: 360, unit: 'MINUTES')
+    }
+
+    // parameters {
+    // For parameters, check into ./dsl/jobs.groovy file
+    // }
+
+    environment {
+        // Static env is defined into ./dsl/jobs.groovy file
+
+        KOGITO_CI_EMAIL_TO = credentials("${JENKINS_EMAIL_CREDS_ID}")
+
+        MAVEN_DEPLOY_LOCAL_DIR = "/tmp/maven_deploy_dir"
+    }
+
+    stages {
+        stage('Initialize') {
+            steps {
+                script {
+                    cleanWs(disableDeferredWipeout: true)
+
+                    if (params.DISPLAY_NAME) {
+                        currentBuild.displayName = params.DISPLAY_NAME
+                    }
+
+                    dir(getRepoName()) {
+                        checkoutRepo()
+                    }
+
+                    env.PROJECT_VERSION = maven.mvnGetVersionProperty(getMavenCommand(), 'project.version')
+                }
+            }
+            post {
+                success {
+                    script {
+                        dir(getRepoName()) {
+                            setDeployPropertyIfNeeded('git.branch', getBuildBranch())
+                            setDeployPropertyIfNeeded('git.author', getGitAuthor())
+                            setDeployPropertyIfNeeded('project.version', getProjectVersion())
+                            setDeployPropertyIfNeeded('drools.version', getDroolsVersion())
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update project version') {
+            steps {
+                script {
+                    maven.mvnVersionsSet(
+                        getMavenCommand(),
+                        getProjectVersion(),
+                        true
+                    )
+
+                    // Drools version is equal to the project version
+                    maven.mvnSetVersionProperty(
+                        getMavenCommand(),
+                        'version.org.kie',
+                        getDroolsVersion()
+                    )
+                }
+            }
+        }
+
+        stage('Build & Test & Install/Deploy') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: env.MAVEN_REPO_CREDS_ID, usernameVariable: 'REPOSITORY_USER', passwordVariable: 'REPOSITORY_TOKEN')]) {
+                        def installOrDeploy
+                        if (shouldDeployToRepository()) {
+                            installOrDeploy = "deploy -DdeployAtEnd -Dapache.repository.username=${REPOSITORY_USER} -Dapache.repository.password=${REPOSITORY_TOKEN} -DretryFailedDeploymentCount=5"
+                        } else {
+                            installOrDeploy = 'install'
+                        }
+                        def mvnCmd = getMavenCommand().withProperty('maven.test.failure.ignore', true)
+                                .withOptions(env.BUILD_MVN_OPTS_CURRENT ? [ env.BUILD_MVN_OPTS_CURRENT ] : [])
+                                .withOptions(env.KOGITO_RUNTIMES_BUILD_MVN_OPTS ? [ env.KOGITO_RUNTIMES_BUILD_MVN_OPTS ] : [])
+                        if (params.SKIP_TESTS) {
+                            mvnCmd.skipTests() // Conflict somehow with Python testing. If `skipTests={anyvalue}` is set, then exec plugin is not executed ...
+                        }
+                        configFileProvider([configFile(fileId: env.MAVEN_SETTINGS_CONFIG_FILE_ID, variable: 'MAVEN_SETTINGS_FILE')]){
+                            mvnCmd
+                                .withSettingsXmlFile(MAVEN_SETTINGS_FILE)
+                                .run("clean $installOrDeploy")
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    script {
+                        saveReports()
+                        util.archiveConsoleLog()
+                    }
+                }
+            }
+        }
+
+        stage('Create and push a new tag') {
+            steps {
+                script {
+                    projectVersion = getProjectVersion(false)
+                    dir(getRepoName()) {
+                        if (githubscm.isThereAnyChanges()) {
+                            def commitMsg = "[${getBuildBranch()}] Update version to ${projectVersion}"
+                            githubscm.setUserConfigFromCreds(getGitAuthorPushCredsId())
+                            githubscm.commitChanges(commitMsg, { githubscm.findAndStageNotIgnoredFiles('pom.xml') })
+                        } else {
+                            println '[WARN] no changes to commit'
+                        }
+                        githubscm.tagRepository(projectVersion)
+                        githubscm.pushRemoteTag('origin', projectVersion, getGitAuthorPushCredsId())
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            script {
+                def propertiesStr = deployProperties.collect { entry ->  "${entry.key}=${entry.value}" }.join('\n')
+                writeFile(text: propertiesStr, file: 'deployment.properties')
+                archiveArtifacts(artifacts: 'deployment.properties')
+            }
+        }
+        unsuccessful {
+            sendNotification()
+        }
+        cleanup {
+            script {
+                util.cleanNode()
+            }
+        }
+    }
+}
+
+void saveReports() {
+    junit testResults: '**/target/surefire-reports/**/*.xml, **/target/failsafe-reports/**/*.xml', allowEmptyResults: true
+}
+
+void checkoutRepo() {
+    deleteDir()
+    checkout(githubscm.resolveRepository(getRepoName(), getGitAuthor(), getBuildBranch(), false, getGitAuthorCredsId()))
+    // need to manually checkout branch since on a detached branch after checkout command
+    sh "git checkout ${getBuildBranch()}"
+    checkoutDatetime = getCheckoutDatetime()
+    if (checkoutDatetime) {
+        sh "git checkout `git rev-list -n 1 --before=\"${checkoutDatetime}\" ${getBuildBranch()}`"
+    }
+}
+
+void sendNotification() {
+    if (params.SEND_NOTIFICATION) {
+        mailer.sendMarkdownTestSummaryNotification('Weekly Deploy', "[${getBuildBranch()}] Kogito Runtimes", [env.KOGITO_CI_EMAIL_TO])
+    } else {
+        echo 'No notification sent per configuration'
+    }
+}
+
+boolean shouldDeployToRepository() {
+    return env.MAVEN_DEPLOY_REPOSITORY && env.MAVEN_REPO_CREDS_ID && getGitAuthor() == 'apache'
+}
+
+String getRepoName() {
+    return env.REPO_NAME
+}
+
+String getGitAuthor() {
+    // GIT_AUTHOR can be env or param
+    return "${GIT_AUTHOR}"
+}
+
+String getGitAuthorCredsId() {
+    return env.GIT_AUTHOR_CREDS_ID
+}
+
+String getGitAuthorPushCredsId() {
+    return env.GIT_AUTHOR_PUSH_CREDS_ID
+}
+
+String getBuildBranch() {
+    return params.BUILD_BRANCH_NAME
+}
+
+String getPRBranch() {
+    return params.KOGITO_PR_BRANCH
+}
+
+void setDeployPropertyIfNeeded(String key, def value) {
+    if (value) {
+        deployProperties[key] = value
+    }
+}
+
+MavenCommand getMavenCommand(String directory = '') {
+    directory = directory ?: getRepoName()
+    return new MavenCommand(this, ['-fae', '-ntp'])
+                .withOptions(env.BUILD_MVN_OPTS ? [ env.BUILD_MVN_OPTS ] : [])
+                .inDirectory(directory)
+                .withProperty('full')
+}
+
+String getLocalDeploymentFolder() {
+    return "${env.MAVEN_DEPLOY_LOCAL_DIR}/${getRepoName()}"
+}
+
+String getCheckoutDatetime() {
+    return params.GIT_CHECKOUT_DATETIME
+}
+
+String getProjectVersionDate() {
+    def projectVersionDate = (getCheckoutDatetime() =~ /(\d{4}-\d{2}-\d{2})/)[0][0]
+    return projectVersionDate.replace('-', '')
+}
+
+String getProjectVersion(boolean keepSnapshotSuffix = true) {
+    def projectVersion = env.PROJECT_VERSION
+    if (keepSnapshotSuffix) {
+        return projectVersion.replace("-SNAPSHOT", "-${getProjectVersionDate()}-SNAPSHOT")
+    }
+    return projectVersion.replace("-SNAPSHOT", "-${getProjectVersionDate()}")
+}
+
+String getDroolsVersion() {
+    return getProjectVersion()
+}

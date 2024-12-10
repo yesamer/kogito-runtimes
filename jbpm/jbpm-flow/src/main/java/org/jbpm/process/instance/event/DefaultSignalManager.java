@@ -1,17 +1,20 @@
 /*
- * Copyright 2010 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.event;
 
@@ -23,12 +26,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import org.drools.core.KogitoWorkingMemory;
 import org.drools.core.common.InternalKnowledgeRuntime;
 import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.common.ReteEvaluator;
 import org.drools.core.common.WorkingMemoryAction;
-import org.drools.core.marshalling.impl.MarshallerReaderContext;
-import org.drools.core.marshalling.impl.MarshallerWriteContext;
+import org.drools.core.marshalling.MarshallerReaderContext;
+import org.drools.core.marshalling.MarshallerWriteContext;
 import org.drools.core.phreak.PropagationEntry;
 import org.jbpm.process.instance.InternalProcessRuntime;
 import org.kie.api.runtime.process.EventListener;
@@ -37,7 +40,7 @@ import org.kie.kogito.signal.SignalManager;
 
 public class DefaultSignalManager implements SignalManager {
 
-    private Map<String, List<EventListener>> processEventListeners = new ConcurrentHashMap<String, List<EventListener>>();
+    private Map<String, List<EventListener>> processEventListeners = new ConcurrentHashMap<>();
     private InternalKnowledgeRuntime kruntime;
 
     public DefaultSignalManager(InternalKnowledgeRuntime kruntime) {
@@ -51,7 +54,7 @@ public class DefaultSignalManager implements SignalManager {
             synchronized (processEventListeners) {
                 eventListeners = processEventListeners.get(type);
                 if (eventListeners == null) {
-                    eventListeners = new CopyOnWriteArrayList<EventListener>();
+                    eventListeners = new CopyOnWriteArrayList<>();
                     processEventListeners.put(type, eventListeners);
                 }
             }
@@ -66,7 +69,6 @@ public class DefaultSignalManager implements SignalManager {
                 eventListeners.remove(eventListener);
                 if (eventListeners.isEmpty()) {
                     processEventListeners.remove(type);
-                    eventListeners = null;
                 }
             }
         }
@@ -88,7 +90,7 @@ public class DefaultSignalManager implements SignalManager {
     }
 
     public void signalEvent(String processInstanceId, String type, Object event) {
-        ProcessInstance processInstance = ((KogitoWorkingMemory) kruntime).getProcessInstance(processInstanceId);
+        ProcessInstance processInstance = kruntime.getProcessInstance(processInstanceId);
         if (processInstance != null) {
             processInstance.signalEvent(type, event);
         }
@@ -115,15 +117,15 @@ public class DefaultSignalManager implements SignalManager {
             }
         }
 
-        public void execute(InternalWorkingMemory workingMemory) {
-            ProcessInstance processInstance = ((KogitoWorkingMemory) workingMemory).getProcessInstance(processInstanceId);
+        public void internalExecute(ReteEvaluator reteEvaluator) {
+            ProcessInstance processInstance = ((InternalKnowledgeRuntime) reteEvaluator).getProcessInstance(processInstanceId);
             if (processInstance != null) {
                 processInstance.signalEvent(type, event);
             }
         }
 
         public void execute(InternalKnowledgeRuntime kruntime) {
-            ProcessInstance processInstance = ((KogitoWorkingMemory) kruntime).getProcessInstance(processInstanceId);
+            ProcessInstance processInstance = kruntime.getProcessInstance(processInstanceId);
             if (processInstance != null) {
                 processInstance.signalEvent(type, event);
             }
@@ -175,8 +177,8 @@ public class DefaultSignalManager implements SignalManager {
             }
         }
 
-        public void execute(InternalWorkingMemory workingMemory) {
-            ((DefaultSignalManager) ((InternalProcessRuntime) workingMemory.getProcessRuntime()).getSignalManager()).internalSignalEvent(type, event);
+        public void internalExecute(ReteEvaluator reteEvaluator) {
+            ((DefaultSignalManager) ((InternalProcessRuntime) ((InternalWorkingMemory) reteEvaluator).getProcessRuntime()).getSignalManager()).internalSignalEvent(type, event);
         }
 
         public void execute(InternalKnowledgeRuntime kruntime) {

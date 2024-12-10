@@ -1,29 +1,32 @@
 /*
- * Copyright 2020 Red Hat, Inc. and/or its affiliates.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.jbpm.process.instance.impl.actions;
 
 import java.io.Serializable;
+import java.util.Map;
+import java.util.UUID;
 
-import org.jbpm.process.core.event.EventTransformerImpl;
 import org.jbpm.process.instance.impl.Action;
-import org.jbpm.process.instance.impl.util.VariableUtil;
-import org.jbpm.workflow.core.node.Transformation;
-import org.kie.kogito.internal.process.runtime.KogitoNodeInstance;
+import org.jbpm.ruleflow.core.Metadata;
+import org.jbpm.workflow.core.impl.NodeIoHelper;
+import org.jbpm.workflow.instance.impl.NodeInstanceImpl;
 import org.kie.kogito.internal.process.runtime.KogitoProcessContext;
-import org.kie.kogito.internal.process.runtime.KogitoProcessInstance;
 import org.kie.kogito.process.workitems.InternalKogitoWorkItemManager;
 import org.kie.kogito.process.workitems.impl.KogitoWorkItemImpl;
 
@@ -34,36 +37,25 @@ public class HandleMessageAction implements Action, Serializable {
     private final String messageType;
     private String variableName;
 
-    private Transformation transformation;
-
     public HandleMessageAction(String messageType, String variableName) {
         this.messageType = messageType;
         this.variableName = variableName;
     }
 
-    public HandleMessageAction(String messageType, String variableName, Transformation transformation) {
-        this.messageType = messageType;
-        this.variableName = variableName;
-        this.transformation = transformation;
-    }
-
     @Override
     public void execute(KogitoProcessContext context) throws Exception {
-        Object variable = VariableUtil.resolveVariable(variableName, context.getNodeInstance());
-
-        if (transformation != null) {
-            variable = new EventTransformerImpl(transformation).transformEvent(variable);
-        }
-
         KogitoWorkItemImpl workItem = new KogitoWorkItemImpl();
+        workItem.setId(UUID.randomUUID().toString());
         workItem.setName("Send Task");
-        workItem.setNodeInstanceId(((KogitoNodeInstance) context.getNodeInstance()).getStringId());
-        workItem.setProcessInstanceId(((KogitoProcessInstance) context.getProcessInstance()).getStringId());
+        workItem.setNodeInstanceId((context.getNodeInstance()).getStringId());
+        workItem.setProcessInstanceId((context.getProcessInstance()).getStringId());
         workItem.setNodeId(context.getNodeInstance().getNodeId());
-        workItem.setParameter("MessageType", messageType);
-        if (variable != null) {
-            workItem.setParameter("Message", variable);
-        }
+        workItem.setParameter(Metadata.MESSAGE_TYPE, messageType);
+
+        // compute inputs for message action
+        NodeInstanceImpl impl = ((NodeInstanceImpl) context.getNodeInstance());
+        Map<String, Object> inputSet = NodeIoHelper.processInputs(impl, varRef -> impl.getVariable(varRef));
+        workItem.getParameters().put(variableName, inputSet.get(variableName));
 
         ((InternalKogitoWorkItemManager) context.getKogitoProcessRuntime().getKogitoWorkItemManager()).internalExecuteWorkItem(workItem);
     }
