@@ -18,38 +18,41 @@
  */
 package org.kie.kogito.maven.plugin;
 
-import java.io.File;
+import java.io.IOException;
+import java.util.Locale;
+import java.util.Objects;
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
-import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 
-@Mojo(name = "scaffold",
+import static org.kie.kogito.codegen.manager.util.RunDebugUtil.debugProject;
+
+@Mojo(name = "debug",
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-        requiresProject = true,
+        defaultPhase = LifecyclePhase.NONE,
         threadSafe = true)
-public class ScaffoldMojo extends GenerateModelMojo {
+public class DebugMojo extends AbstractKogitoMojo {
 
-    @Parameter(property = "kogito.codegen.ondemand", defaultValue = "true")
-    private boolean onDemand;
-
-    @Parameter(property = "kogito.codegen.sources.directory", defaultValue = "${project.build.sourceDirectory}")
-    private File customizableSources;
+    private static final String OS_NAME = System.getProperty("os.name").toLowerCase(Locale.US);
 
     @Override
     public void execute() throws MojoExecutionException {
-        //addCompileSourceRoots();
-        ClassLoader projectClassLoader = projectClassLoader();
-        //KogitoBuildContext kogitoBuildContext = getKogitoBuildContext(projectClassLoader);
-        //generateModel(kogitoBuildContext);
+        Log log = getLog();
+        log.info(mavenProject.toString());
+        log.info(projectBuildOutputDirectory.toString());
+        //log.info(mojoExecution.toString());
+        // TODO FIX
+        if (!projectBuildOutputDirectory.exists() || Objects.requireNonNull(projectBuildOutputDirectory.listFiles()).length == 0) {
+            buildProject();
+        }
+        try {
+            debugProject(mavenProject.getBasedir(), mavenProject.getBuild().getDirectory(), mavenProject.getBuild().getFinalName() + ".jar");
+        } catch (IOException e) {
+            throw new MojoExecutionException(e);
+        }
     }
-
-    /*
-     * @Override
-     * public boolean isOnDemand() {
-     * return onDemand;
-     * }
-     */
 
 }

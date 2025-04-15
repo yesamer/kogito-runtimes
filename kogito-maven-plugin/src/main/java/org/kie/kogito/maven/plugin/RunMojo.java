@@ -18,38 +18,30 @@
  */
 package org.kie.kogito.maven.plugin;
 
-import java.io.File;
-
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
-import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 
-@Mojo(name = "scaffold",
+import static org.kie.kogito.codegen.manager.util.RunDebugUtil.runProject;
+
+@Mojo(name = "run",
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-        requiresProject = true,
+        defaultPhase = LifecyclePhase.NONE,
         threadSafe = true)
-public class ScaffoldMojo extends GenerateModelMojo {
-
-    @Parameter(property = "kogito.codegen.ondemand", defaultValue = "true")
-    private boolean onDemand;
-
-    @Parameter(property = "kogito.codegen.sources.directory", defaultValue = "${project.build.sourceDirectory}")
-    private File customizableSources;
+public class RunMojo extends AbstractKogitoMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        //addCompileSourceRoots();
-        ClassLoader projectClassLoader = projectClassLoader();
-        //KogitoBuildContext kogitoBuildContext = getKogitoBuildContext(projectClassLoader);
-        //generateModel(kogitoBuildContext);
+        Log log = getLog();
+        log.info(mavenProject.toString());
+        log.info(projectBuildOutputDirectory.toString());
+        //log.info(mojoExecution.toString());
+        // if (!isProjectBuild()) {
+        buildProject();
+        //}
+        runProject();
     }
-
-    /*
-     * @Override
-     * public boolean isOnDemand() {
-     * return onDemand;
-     * }
-     */
 
 }

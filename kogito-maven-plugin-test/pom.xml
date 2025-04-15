@@ -150,7 +150,7 @@
           <execution>
             <phase>compile</phase>
             <goals>
-              <goal>generateModel</goal>
+              <goal>run</goal>
             </goals>
           </execution>
         </executions>

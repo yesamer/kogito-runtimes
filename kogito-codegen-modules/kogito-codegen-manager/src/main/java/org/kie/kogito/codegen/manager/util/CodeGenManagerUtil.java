@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -66,6 +67,11 @@ public class CodeGenManagerUtil {
             String generateProcesses,
             String generateRules,
             boolean persistence) {
+    }
+
+    public static ClassLoader projectClassLoader(Set<URL> urls) {
+        URL[] urlArray = urls.toArray(new URL[urls.size()]);
+        return URLClassLoader.newInstance(urlArray, Thread.currentThread().getContextClassLoader());
     }
 
     public static KogitoBuildContext discoverKogitoRuntimeContext(ClassLoader projectClassLoader,

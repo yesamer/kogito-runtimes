@@ -19,20 +19,21 @@
 package org.kie.kogito.maven.plugin;
 
 import java.io.File;
-import java.nio.file.Path;
+// import java.nio.file.Path;
 import java.util.Map;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
-import org.drools.codegen.common.GeneratedFileWriter;
+// import org.drools.codegen.common.GeneratedFileWriter;
 import org.kie.kogito.codegen.manager.util.CodeGenManagerUtil;
 import org.kie.kogito.maven.plugin.util.MojoUtil;
 
 public abstract class AbstractKieMojo extends AbstractMojo {
 
-    protected static final GeneratedFileWriter.Builder GENERATED_FILE_WRITER_BUILDER = GeneratedFileWriter.builder("kogito", "kogito.codegen.resources.directory", "kogito.codegen.sources.directory");
+    // protected static final GeneratedFileWriter.Builder GENERATED_FILE_WRITER_BUILDER =
+    //    GeneratedFileWriter.builder("kogito", "kogito.codegen.resources.directory", "kogito.codegen.sources.directory", "");
 
     @Parameter(required = true, defaultValue = "${project.basedir}")
     protected File projectBaseDir;
@@ -100,8 +101,9 @@ public abstract class AbstractKieMojo extends AbstractMojo {
     private boolean hasDependency(String dependency) {
         return project.getDependencies().stream().anyMatch(d -> d.getArtifactId().contains(dependency));
     }
-
-    protected GeneratedFileWriter getGeneratedFileWriter() {
-        return GENERATED_FILE_WRITER_BUILDER.build(Path.of(baseDir.getAbsolutePath()));
-    }
+    /*
+     * protected GeneratedFileWriter getGeneratedFileWriter() {
+     * return GENERATED_FILE_WRITER_BUILDER.build(Path.of(baseDir.getAbsolutePath()));
+     * }
+     */
 }

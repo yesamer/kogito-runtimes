@@ -47,7 +47,7 @@ public class GenerateModelMojoProjectStub extends MavenProject {
             setPackaging(model.getPackaging());
 
             Build build = new Build();
-            build.setFinalName(model.getArtifactId());
+            build.setFinalName(model.getArtifactId() + "-" + model.getVersion());
             build.setSourceDirectory(getBasedir() + "/src/main/java");
             build.setTestSourceDirectory(getBasedir() + "/src/test/java");
             build.setDirectory(getTargetdir().toString());

@@ -44,7 +44,8 @@ public class CompilerHelper {
     private static final Logger LOGGER = LoggerFactory.getLogger(CompilerHelper.class);
 
     private static final JavaCompiler JAVA_COMPILER = JavaCompilerFactory.loadCompiler(JavaConfiguration.CompilerType.NATIVE, "17");
-    private static final GeneratedFileWriter.Builder GENERATED_FILE_WRITER_BUILDER = GeneratedFileWriter.builder("kogito", "kogito.codegen.resources.directory", "kogito.codegen.sources.directory");
+    private static final GeneratedFileWriter.Builder GENERATED_FILE_WRITER_BUILDER =
+            GeneratedFileWriter.builder("kogito", "kogito.codegen.resources.directory", "kogito.codegen.sources.directory", "");
     public static final String SOURCES = "SOURCES";
     public static final String RESOURCES = "RESOURCES";
 
@@ -68,13 +69,43 @@ public class CompilerHelper {
         writeFiles(generatedSources, baseDir);
     }
 
+    public static void compileAndDumpGeneratedSources(Collection<GeneratedFile> generatedSources,
+            ClassLoader classLoader,
+            List<String> runtimeClassPathElements,
+            Path baseDir,
+            String javaSourceEncoding,
+            String javaSourceVersion,
+            String javaTargetVersion) {
+        compileAndWriteClasses(generatedSources,
+                classLoader,
+                buildJavaCompilerSettings(runtimeClassPathElements,
+                        javaSourceEncoding,
+                        javaSourceVersion,
+                        javaTargetVersion),
+                getGeneratedFileWriter(baseDir));
+        writeFiles(generatedSources, baseDir);
+    }
+
     public static void dumpResources(Collection<GeneratedFile> resources, File baseDir) {
+        writeFiles(resources, baseDir);
+    }
+
+    public static void dumpResources(Collection<GeneratedFile> resources, Path baseDir) {
         writeFiles(resources, baseDir);
     }
 
     static void writeFiles(Collection<GeneratedFile> toWrite, File baseDir) {
         GeneratedFileWriter writer = getGeneratedFileWriter(baseDir);
         toWrite.forEach(generatedFile -> writeGeneratedFile(generatedFile, writer));
+    }
+
+    static void writeFiles(Collection<GeneratedFile> toWrite, Path baseDir) {
+        GeneratedFileWriter writer = getGeneratedFileWriter(baseDir);
+        toWrite.forEach(generatedFile -> writeGeneratedFile(generatedFile, writer));
+    }
+
+    static GeneratedFileWriter getGeneratedFileWriter(Path baseDir) {
+        return GENERATED_FILE_WRITER_BUILDER.build(baseDir);
     }
 
     static void writeGeneratedFile(GeneratedFile generatedFile, GeneratedFileWriter writer) {

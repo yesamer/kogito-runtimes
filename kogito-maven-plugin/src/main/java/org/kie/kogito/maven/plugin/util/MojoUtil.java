@@ -22,10 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -106,6 +103,10 @@ public final class MojoUtil {
             }
         }
         return null;
+    }
+
+    public static boolean hasDependency(final MavenProject mavenProject, String dependency) {
+        return mavenProject.getDependencies().stream().anyMatch(d -> d.getArtifactId().contains(dependency));
     }
 
     public static boolean hasClassOnClasspath(final MavenProject project, String className) {
