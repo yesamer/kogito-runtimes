@@ -140,9 +140,8 @@
           <version>${project.version}</version> <!-- Needed, otherwise it would use the latest release found on Maven central -->
           <executions>
             <execution>
-              <phase>compile</phase>
               <goals>
-                <goal>generateModel</goal>
+                <goal>run</goal>
               </goals>
             </execution>
           </executions>

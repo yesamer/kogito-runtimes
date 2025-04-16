@@ -32,7 +32,7 @@ import static org.kie.kogito.codegen.manager.util.RunDebugUtil.debugProject;
 
 @Mojo(name = "debug",
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-        defaultPhase = LifecyclePhase.NONE,
+        defaultPhase = LifecyclePhase.PRE_INTEGRATION_TEST,
         threadSafe = true)
 public class DebugMojo extends AbstractKogitoMojo {
 
