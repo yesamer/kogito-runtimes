@@ -26,7 +26,7 @@ import org.postgresql.ds.PGSimpleDataSource;
 
 public class PostgreSQLTestDataSource implements TestDataSource {
 
-    private PGSimpleDataSource dataSource;
+    private final PGSimpleDataSource dataSource;
 
     public PostgreSQLTestDataSource(KogitoPostgreSqlContainer pgContainer) {
         dataSource = new PGSimpleDataSource();

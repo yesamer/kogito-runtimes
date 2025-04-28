@@ -30,13 +30,22 @@ import java.util.Set;
 
 import org.kie.kogito.event.DataEvent;
 
-import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.*;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readDate;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readInteger;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readUTF;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readUTFCollection;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.toDate;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeDate;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeInteger;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeUTF;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeUTFCollection;
 
 public class ProcessInstanceStateEventBody implements KogitoMarshallEventSupport, CloudEventVisitor {
 
     public static final int EVENT_TYPE_STARTED = 1;
     public static final int EVENT_TYPE_ENDED = 2;
     public static final int EVENT_TYPE_MIGRATED = 3;
+    public static final int EVENT_TYPE_RETRIGGERED = 4;
 
     // common fields for events
     private Date eventDate;
@@ -83,7 +92,7 @@ public class ProcessInstanceStateEventBody implements KogitoMarshallEventSupport
     }
 
     @Override
-    public void readEvent(DataInput in) throws IOException {
+    public void readEvent(DataInput in, Set<KogitoMarshallEventFlag> flags) throws IOException {
         eventType = readInteger(in);
         processName = readUTF(in);
         state = readInteger(in);

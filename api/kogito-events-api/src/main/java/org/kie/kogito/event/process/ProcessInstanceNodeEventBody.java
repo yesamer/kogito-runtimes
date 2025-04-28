@@ -25,10 +25,19 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import org.kie.kogito.event.DataEvent;
 
-import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.*;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readDate;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readInteger;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readObject;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.readUTF;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.toDate;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeDate;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeInteger;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeObject;
+import static org.kie.kogito.event.process.KogitoEventBodySerializationHelper.writeUTF;
 
 public class ProcessInstanceNodeEventBody implements KogitoMarshallEventSupport, CloudEventVisitor {
 
@@ -76,6 +85,8 @@ public class ProcessInstanceNodeEventBody implements KogitoMarshallEventSupport,
 
     private Date slaDueDate;
 
+    private Boolean retrigger;
+
     private Map<String, Object> data;
 
     @Override
@@ -89,10 +100,11 @@ public class ProcessInstanceNodeEventBody implements KogitoMarshallEventSupport,
         writeUTF(out, workItemId);
         writeDate(out, slaDueDate);
         writeObject(out, data);
+        writeObject(out, retrigger);
     }
 
     @Override
-    public void readEvent(DataInput in) throws IOException {
+    public void readEvent(DataInput in, Set<KogitoMarshallEventFlag> flags) throws IOException {
         eventType = readInteger(in);
         connectionNodeDefinitionId = readUTF(in);
         nodeDefinitionId = in.readUTF();
@@ -102,6 +114,9 @@ public class ProcessInstanceNodeEventBody implements KogitoMarshallEventSupport,
         workItemId = readUTF(in);
         slaDueDate = readDate(in);
         data = (Map<String, Object>) readObject(in);
+        if (flags.contains(KogitoMarshallEventFlag.RETRIGGER)) {
+            retrigger = (Boolean) readObject(in);
+        }
     }
 
     @Override
@@ -119,6 +134,10 @@ public class ProcessInstanceNodeEventBody implements KogitoMarshallEventSupport,
 
     public Date getEventDate() {
         return eventDate;
+    }
+
+    public Boolean isRetrigger() {
+        return retrigger;
     }
 
     public String getEventUser() {
@@ -255,6 +274,11 @@ public class ProcessInstanceNodeEventBody implements KogitoMarshallEventSupport,
 
         public Builder nodeName(String nodeName) {
             instance.nodeName = nodeName;
+            return this;
+        }
+
+        public Builder setRetrigger(Boolean isRetrigger) {
+            instance.retrigger = isRetrigger;
             return this;
         }
 

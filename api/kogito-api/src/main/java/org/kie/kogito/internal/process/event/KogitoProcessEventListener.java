@@ -19,6 +19,7 @@
 package org.kie.kogito.internal.process.event;
 
 import org.kie.api.event.process.ProcessEventListener;
+import org.kie.api.event.process.ProcessRetriggeredEvent;
 
 public interface KogitoProcessEventListener extends ProcessEventListener {
 
@@ -36,5 +37,9 @@ public interface KogitoProcessEventListener extends ProcessEventListener {
      * @param event
      */
     default void afterWorkItemTransition(ProcessWorkItemTransitionEvent event) {
+    }
+
+    default void onProcessRetriggered(ProcessRetriggeredEvent event) {
+
     }
 }

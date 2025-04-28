@@ -88,16 +88,6 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.kie</groupId>
-            <artifactId>kogito-addons-quarkus-fabric8-kubernetes-service-catalog</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.kie</groupId>
-            <artifactId>kogito-addons-quarkus-fabric8-kubernetes-service-catalog-test-utils</artifactId>
-            <scope>test</scope>
-        </dependency>
         <!-- this is used implicitly by Maven parallel builds so let's make Maven aware of it -->
         <dependency>
             <groupId>org.kie</groupId>
@@ -147,6 +137,9 @@
                             <version>${version.io.quarkus}</version>
                         </path>
                     </annotationProcessorPaths>
+                    <compilerArgs>
+                        <arg>-AlegacyConfigRoot=true</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
         </plugins>

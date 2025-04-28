@@ -82,6 +82,7 @@ public class DefaultUserTaskInstance implements UserTaskInstance {
     private List<Attachment> attachments;
     private List<Comment> comments;
     private String externalReferenceId;
+    private Date slaDueDate;
 
     private Map<String, Object> inputs;
     private Map<String, Object> outputs;
@@ -240,6 +241,15 @@ public class DefaultUserTaskInstance implements UserTaskInstance {
 
     public void setExternalReferenceId(String externalReferenceId) {
         this.externalReferenceId = externalReferenceId;
+    }
+
+    @Override
+    public Date getSlaDueDate() {
+        return slaDueDate;
+    }
+
+    public void setSlaDueDate(Date slaDueDate) {
+        this.slaDueDate = slaDueDate;
     }
 
     @Override
@@ -678,6 +688,7 @@ public class DefaultUserTaskInstance implements UserTaskInstance {
                     .generateId()
                     .expirationTime(expirationTime)
                     .userTaskInstanceId(this.id)
+                    .metadata(this.metadata)
                     .build());
         }
         return jobs;
@@ -725,14 +736,14 @@ public class DefaultUserTaskInstance implements UserTaskInstance {
 
     public void trigger(UserTaskInstanceJobDescription jobDescription) {
         LOG.trace("trigger timer in user tasks {} and job {}", this, jobDescription);
-        checkAndSendNotitication(jobDescription, notStartedDeadlinesTimers, this::startNotification);
-        checkAndSendNotitication(jobDescription, notCompletedDeadlinesTimers, this::endNotification);
+        checkAndSendNotification(jobDescription, notStartedDeadlinesTimers, this::startNotification);
+        checkAndSendNotification(jobDescription, notCompletedDeadlinesTimers, this::endNotification);
         checkAndReassign(jobDescription, notStartedReassignmentsTimers);
         checkAndReassign(jobDescription, notCompletedReassignmentsTimers);
         this.updatePersistence();
     }
 
-    private void checkAndSendNotitication(UserTaskInstanceJobDescription timerInstance, Map<String, Notification> timers, Consumer<Notification> publisher) {
+    private void checkAndSendNotification(UserTaskInstanceJobDescription timerInstance, Map<String, Notification> timers, Consumer<Notification> publisher) {
         Notification notification = timers.get(timerInstance.id());
         if (notification == null) {
             return;
@@ -774,15 +785,13 @@ public class DefaultUserTaskInstance implements UserTaskInstance {
             setPotentialGroups(reassignment.getPotentialGroups());
         }
 
-        this.userTaskLifeCycle.newReassignmentTransitionToken(this, emptyMap()).ifPresent(token -> {
-            this.userTaskLifeCycle.transition(this, token, IdentityProviders.of(WORKFLOW_ENGINE_USER));
-        });
+        this.transition(this.userTaskLifeCycle.reassignTransition(), emptyMap(), IdentityProviders.of(WORKFLOW_ENGINE_USER));
     }
 
     @Override
     public String toString() {
         return "DefaultUserTaskInstance [id=" + id + ", status=" + status + ", actualOwner=" + actualOwner + ", taskName=" + taskName + ", taskDescription=" + taskDescription + ", taskPriority="
-                + taskPriority + "]";
+                + taskPriority + ", slaDueDate=" + slaDueDate + "]";
     }
 
 }

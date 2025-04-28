@@ -33,6 +33,7 @@ import org.jbpm.flow.serialization.MarshallerReaderContext;
 import org.jbpm.flow.serialization.NodeInstanceReader;
 import org.jbpm.flow.serialization.ProcessInstanceMarshallerListener;
 import org.jbpm.flow.serialization.protobuf.KogitoProcessInstanceProtobuf;
+import org.jbpm.flow.serialization.protobuf.KogitoProcessInstanceProtobuf.HeaderEntry;
 import org.jbpm.flow.serialization.protobuf.KogitoTypesProtobuf;
 import org.jbpm.flow.serialization.protobuf.KogitoTypesProtobuf.SLAContext;
 import org.jbpm.flow.serialization.protobuf.KogitoTypesProtobuf.WorkflowContext;
@@ -155,6 +156,10 @@ public class ProtobufProcessInstanceReader {
             processInstance.internalSetErrorNodeId(processInstanceProtobuf.getErrorNodeId());
         }
 
+        if (processInstanceProtobuf.hasErrorNodeInstanceId()) {
+            processInstance.internalSetErrorNodeInstanceId(processInstanceProtobuf.getErrorNodeInstanceId());
+        }
+
         if (processInstanceProtobuf.hasErrorMessage()) {
             processInstance.internalSetErrorMessage(processInstanceProtobuf.getErrorMessage());
         }
@@ -168,6 +173,10 @@ public class ProtobufProcessInstanceReader {
             for (KogitoTypesProtobuf.SwimlaneContext _swimlane : processInstanceProtobuf.getSwimlaneContextList()) {
                 swimlaneContextInstance.setActorId(_swimlane.getSwimlane(), _swimlane.getActorId());
             }
+        }
+
+        if (processInstanceProtobuf.getHeadersList() != null) {
+            processInstance.setHeaders(processInstanceProtobuf.getHeadersList().stream().collect(Collectors.toMap(HeaderEntry::getKey, HeaderEntry::getValueList)));
         }
 
         WorkflowContext workflowContext = processInstanceProtobuf.getContext();
@@ -194,6 +203,9 @@ public class ProtobufProcessInstanceReader {
         if (nodeInstanceImpl.getProcessInstance() == null) {
             nodeInstanceImpl.setProcessInstance(processInstance);
         }
+
+        if (nodeInstanceProtobuf.hasRetrigger())
+            nodeInstanceImpl.internalSetRetrigger(nodeInstanceProtobuf.getRetrigger());
 
         nodeInstanceImpl.setLevel(nodeInstanceProtobuf.getLevel() == 0 ? 1 : nodeInstanceProtobuf.getLevel());
     }
