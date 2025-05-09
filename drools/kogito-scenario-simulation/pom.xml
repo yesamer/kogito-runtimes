@@ -97,12 +97,6 @@
         <dependency>
             <groupId>org.drools</groupId>
             <artifactId>drools-scenario-simulation-api</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.kie.soup</groupId>
-                    <artifactId>kie-soup-project-datamodel-api</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>
@@ -119,16 +113,6 @@
                 <exclusion>
                     <groupId>com.fasterxml.jackson.core</groupId>
                     <artifactId>jackson-databind</artifactId>
-                </exclusion>
-
-                <!-- KIE soup -->
-                <exclusion>
-                    <groupId>org.kie.soup</groupId>
-                    <artifactId>kie-soup-commons</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.kie.soup</groupId>
-                    <artifactId>kie-soup-project-datamodel-api</artifactId>
                 </exclusion>
 
                 <!-- MVEL support -->
@@ -156,6 +140,12 @@
                 </exclusion>
 
             </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-engine</artifactId>
+            <scope>compile</scope>
         </dependency>
     </dependencies>
 </project>
