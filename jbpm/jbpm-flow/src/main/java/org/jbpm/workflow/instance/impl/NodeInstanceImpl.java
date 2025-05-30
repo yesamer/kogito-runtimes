@@ -19,12 +19,8 @@
 package org.jbpm.workflow.instance.impl;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.ZonedDateTime;
+import java.util.*;
 import java.util.Map.Entry;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -634,6 +630,10 @@ public abstract class NodeInstanceImpl implements org.jbpm.workflow.instance.Nod
 
     protected void configureSla() {
 
+    }
+
+    public void rescheduleSlaTimer(ZonedDateTime slaDueDate) {
+        throw new UnsupportedOperationException("Unsupported operation");
     }
 
     @Override
