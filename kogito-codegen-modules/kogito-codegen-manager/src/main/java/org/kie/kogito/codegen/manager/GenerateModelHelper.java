@@ -30,23 +30,24 @@ import org.kie.kogito.codegen.api.context.KogitoBuildContext;
 import org.kie.kogito.codegen.core.ApplicationGenerator;
 import org.kie.kogito.codegen.core.utils.ApplicationGeneratorDiscovery;
 import org.kie.kogito.codegen.manager.processes.PersistenceGenerationHelper;
-import org.kie.kogito.codegen.manager.util.CodeGenManagerUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.drools.codegen.common.GeneratedFileType.COMPILED_CLASS;
 import static org.kie.efesto.common.api.constants.Constants.INDEXFILE_DIRECTORY_PROPERTY;
-import static org.kie.kogito.codegen.manager.CompilerHelper.RESOURCES;
-import static org.kie.kogito.codegen.manager.CompilerHelper.SOURCES;
 
 public class GenerateModelHelper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(GenerateModelHelper.class);
 
+    public static final String SOURCES = "SOURCES";
+    public static final String RESOURCES = "RESOURCES";
+
     private GenerateModelHelper() {
     }
 
-    public record GenerateModelInfo(ClassLoader projectClassLoader,
+    public record GenerateModelInfo(
+            ClassLoader projectClassLoader,
             KogitoBuildContext kogitoBuildContext,
             boolean onDemand,
             boolean generatePartial,
@@ -54,18 +55,18 @@ public class GenerateModelHelper {
             File outputDirectory,
             List<String> runtimeClassPathElements,
             File baseDir,
-            String javaSourceEncoding,
-            String javaVersion,
             String schemaVersion,
             boolean keepSources) {
 
         public GenerateModelInfo(ClassLoader projectClassLoader, KogitoBuildContext kogitoBuildContext, BuilderManager.BuildInfo buildInfo) {
-            this(projectClassLoader, kogitoBuildContext, buildInfo.onDemand(), buildInfo.generatePartial(), buildInfo.properties(),
+            this(projectClassLoader,
+                    kogitoBuildContext,
+                    buildInfo.onDemand(),
+                    buildInfo.generatePartial(),
+                    buildInfo.properties(),
                     buildInfo.outputDirectory().toFile(),
                     buildInfo.runtimeClassPathElements(),
-                    buildInfo.projectBaseAbsolutePath().toFile(),
-                    buildInfo.javaSourceEncoding(),
-                    buildInfo.javaVersion(),
+                    buildInfo.projectBasePath().toFile(),
                     buildInfo.jsonSchemaVersion(),
                     buildInfo.keepSources());
         }
@@ -96,24 +97,19 @@ public class GenerateModelHelper {
             System.clearProperty(INDEXFILE_DIRECTORY_PROPERTY);
         }
 
-        CompilerHelper.CompileInfo compileInfo =
-                new CompilerHelper.CompileInfo(generatedModelFiles.get(SOURCES),
-                        generatedModelFiles.get(RESOURCES), generateModelInfo);
-
-        // Compile and write model files
-        CompilerHelper.compileAndDump(compileInfo);
+        GeneratedFileManager.dumpGeneratedFiles(generatedModelFiles.get(SOURCES), generateModelInfo.baseDir().toPath());
+        GeneratedFileManager.dumpGeneratedFiles(generatedModelFiles.get(RESOURCES), generateModelInfo.baseDir().toPath());
 
         Map<String, Collection<GeneratedFile>> generatedPersistenceFiles =
-                PersistenceGenerationHelper.generatePersistenceFiles(generateModelInfo.kogitoBuildContext, generateModelInfo.projectClassLoader, generateModelInfo.schemaVersion);
+                PersistenceGenerationHelper.generatePersistenceFiles(
+                        generateModelInfo.kogitoBuildContext, generateModelInfo.projectClassLoader,
+                        generateModelInfo.schemaVersion);
 
-        // Compile and write persistence files
-        compileInfo =
-                new CompilerHelper.CompileInfo(generatedPersistenceFiles.get(SOURCES),
-                        generatedPersistenceFiles.get(RESOURCES), generateModelInfo);
-        CompilerHelper.compileAndDump(compileInfo);
+        GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(SOURCES), generateModelInfo.baseDir().toPath());
+        GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(RESOURCES), generateModelInfo.baseDir().toPath());
 
         if (!generateModelInfo.keepSources()) {
-            CodeGenManagerUtil.deleteDrlFiles(generateModelInfo.outputDirectory().toPath());
+            GeneratedFileManager.deleteFilesByExtension(generateModelInfo.outputDirectory().toPath(), "drl");
         }
     }
 

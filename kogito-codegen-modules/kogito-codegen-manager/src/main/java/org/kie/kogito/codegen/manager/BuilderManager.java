@@ -37,7 +37,7 @@ public class BuilderManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(BuilderManager.class);
 
     public interface KogitoBuildContextInfo {
-        Path projectBaseAbsolutePath();
+        Path projectBasePath();
 
         CodeGenManagerUtil.Framework framework();
 
@@ -47,13 +47,11 @@ public class BuilderManager {
     }
 
     public record BuildInfo(Set<URI> projectFilesUris,
-            Path projectBaseAbsolutePath, //MUST BE ABSOLUTE
+            Path projectBasePath,
             Path outputDirectory,
             String projectGroupId,
             String projectArtifactId,
             String projectVersion,
-            String javaSourceEncoding,
-            String javaVersion,
             String jsonSchemaVersion,
             boolean generatePartial,
             boolean enablePersistence,
@@ -77,7 +75,7 @@ public class BuilderManager {
     }
 
     static KogitoBuildContext getKogitoBuildContext(ClassLoader projectClassLoader, KogitoGAV kogitoGAV, KogitoBuildContextInfo kogitoBuildContextInfo) {
-        return CodeGenManagerUtil.discoverKogitoRuntimeContext(projectClassLoader, kogitoBuildContextInfo.projectBaseAbsolutePath(), kogitoGAV,
+        return CodeGenManagerUtil.discoverKogitoRuntimeContext(projectClassLoader, kogitoBuildContextInfo.projectBasePath(), kogitoGAV,
                 new CodeGenManagerUtil.ProjectParameters(kogitoBuildContextInfo.framework(), "", "", "", "", kogitoBuildContextInfo.enablePersistence()),
                 className -> {
                     try {

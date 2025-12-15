@@ -18,14 +18,16 @@
  */
 package org.kie.kogito.maven.plugin;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.BuildPluginManager;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -34,19 +36,25 @@ import org.kie.kogito.codegen.manager.BuilderManager;
 import org.kie.kogito.codegen.manager.util.CodeGenManagerUtil;
 import org.kie.kogito.maven.plugin.util.MojoUtil;
 
+import static org.twdata.maven.mojoexecutor.MojoExecutor.*;
+
 public abstract class AbstractKieMojo extends AbstractMojo {
+
+    /* This represents by default the target/classes directory. */
+    @Parameter(required = true, defaultValue = "${project.build.outputDirectory}")
+    protected Path projectBuildOutputDirectory;
+
+    @Parameter
+    protected Map<String, String> properties;
+
+    @Parameter(property = "kogito.codegen.persistence")
+    protected boolean persistence;
+
+    @Parameter(property = "kogito.jsonSchema.version")
+    protected String jsonSchemaVersion;
 
     @Parameter(property = "kogito.codegen.decisions")
     protected String generateDecisions;
-
-    /**
-     * Partial generation can be used when reprocessing a pre-compiled project
-     * for faster code-generation. It only generates code for rules and processes,
-     * and does not generate extra meta-classes (etc. Application).
-     * Use only when doing recompilation and for development purposes
-     */
-    @Parameter(property = "kogito.codegen.partial", defaultValue = "false")
-    protected boolean generatePartial;
 
     @Parameter(property = "kogito.codegen.predictions")
     protected String generatePredictions;
@@ -56,27 +64,14 @@ public abstract class AbstractKieMojo extends AbstractMojo {
 
     @Parameter(property = "kogito.codegen.rules")
     protected String generateRules;
-
-    @Parameter
-    protected Map<String, String> properties;
-
-    @Parameter(defaultValue = "17", property = "maven.compiler.release")
-    protected String mavenCompilerJavaVersion;
-
-    @Parameter(property = "kogito.codegen.persistence")
-    protected boolean persistence;
-
-    @Parameter(required = true, defaultValue = "${project.basedir}")
-    protected File projectBaseDir;
-
-    @Parameter(required = true, defaultValue = "${project.build.outputDirectory}")
-    protected File projectBuildOutputDirectory;
-
-    @Parameter(required = true, defaultValue = "${project.build.sourceEncoding}")
-    protected String projectSourceEncoding;
-
-    @Parameter(property = "kogito.jsonSchema.version", required = false) //TODO double check this required false
-    protected String jsonSchemaVersion;
+    /**
+     * Partial generation can be used when reprocessing a pre-compiled project
+     * for faster code-generation. It only generates code for rules and processes,
+     * and does not generate extra meta-classes (etc. Application).
+     * Use only when doing recompilation and for development purposes
+     */
+    @Parameter(property = "kogito.codegen.partial", defaultValue = "false")
+    protected boolean generatePartial;
 
     @Parameter(property = "kogito.codegen.ondemand", defaultValue = "false")
     protected boolean onDemand;
@@ -88,21 +83,26 @@ public abstract class AbstractKieMojo extends AbstractMojo {
     protected MavenProject project;
 
     @Component
-    protected MavenProject mavenProject;
+    private BuildPluginManager pluginManager;
+
+    @Component
+    private MavenProject mavenProject;
+
+    @Component
+    private MavenSession mavenSession;
 
     public void buildProject() throws MojoExecutionException {
         getLog().info("buildProject");
         executionLog();
         try {
             Set<URI> projectFilesUris = MojoUtil.getProjectFiles(mavenProject, null);
-            BuilderManager.BuildInfo buildInfo = new BuilderManager.BuildInfo(projectFilesUris,
-                    projectBaseDir.toPath(),
-                    projectBuildOutputDirectory.toPath(),
+            BuilderManager.BuildInfo buildInfo = new BuilderManager.BuildInfo(
+                    projectFilesUris,
+                    project.getBasedir().toPath(),
+                    projectBuildOutputDirectory,
                     mavenProject.getGroupId(),
                     mavenProject.getArtifactId(),
                     mavenProject.getVersion(),
-                    projectSourceEncoding,
-                    mavenCompilerJavaVersion,
                     jsonSchemaVersion,
                     generatePartial,
                     persistence,
@@ -111,18 +111,33 @@ public abstract class AbstractKieMojo extends AbstractMojo {
                     mavenProject.getRuntimeClasspathElements(),
                     discoverFramework(),
                     properties);
+
             BuilderManager.build(buildInfo);
+
+            mavenProject.addCompileSourceRoot(project.getBasedir().getAbsolutePath() + "/target/generated-sources/kogito");
+
+            executeMojo(
+                    plugin(
+                            groupId("org.apache.maven.plugins"),
+                            artifactId("maven-compiler-plugin"),
+                            version("3.13.0")),
+                    goal("compile"),
+                    configuration(),
+                    executionEnvironment(
+                            mavenProject,
+                            mavenSession,
+                            pluginManager));
+
         } catch (DependencyResolutionRequiredException | IOException e) {
             throw new MojoExecutionException("Error building project", e);
         }
     }
 
     protected void executionLog() {
-        getLog().info("Compiler Java Version: " + mavenCompilerJavaVersion);
-        getLog().info("Compiler Source Encoding: " + projectSourceEncoding);
-        getLog().info("Project base directory: " + projectBaseDir.getAbsolutePath());
-        getLog().info("Build output directory: " + projectBuildOutputDirectory);
-        getLog().info("Partial generation is enabled: " + generatePartial);
+        getLog().info("=maven-kogito-plugin parameters ==========");
+        getLog().info("Project base directory: " + project.getBasedir().toPath().toAbsolutePath());
+        getLog().info("Build output directory: " + projectBuildOutputDirectory.toAbsolutePath());
+        getLog().info("Persistence is enabled " + persistence);
         getLog().info("Json schema version: " + jsonSchemaVersion);
         getLog().info("===================================");
     }

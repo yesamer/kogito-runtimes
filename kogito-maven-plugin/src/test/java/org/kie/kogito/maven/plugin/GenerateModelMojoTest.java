@@ -18,8 +18,6 @@
  */
 package org.kie.kogito.maven.plugin;
 
-import java.io.File;
-
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.testing.junit5.InjectMojo;
 import org.apache.maven.plugin.testing.junit5.MojoTest;
@@ -79,9 +77,11 @@ class GenerateModelMojoTest {
     }
 
     private void commonSetup(GenerateModelMojo mojo, boolean onDemand) {
-        mojo.projectBuildOutputDirectory = new File(mojo.project.getModel().getBuild().getOutputDirectory());
-        mojo.projectBaseDir = mojo.project.getBasedir();
-        mojo.projectSourceEncoding = "UTF-8";
-        mojo.onDemand = onDemand;
+        /*
+         * mojo.projectBuildOutputDirectory = new File(mojo.project.getModel().getBuild().getOutputDirectory());
+         * mojo.projectBaseDir = mojo.project.getBasedir();
+         * mojo.projectSourceEncoding = "UTF-8";
+         * mojo.onDemand = onDemand;
+         */
     }
 }

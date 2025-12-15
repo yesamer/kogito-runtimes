@@ -39,6 +39,7 @@ import org.kie.memorycompiler.JavaConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Deprecated
 public class CompilerHelper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CompilerHelper.class);
@@ -56,18 +57,14 @@ public class CompilerHelper {
             Collection<GeneratedFile> resources,
             ClassLoader projectClassLoader,
             List<String> runtimeClassPathElements,
-            File baseDir,
-            String javaSourceEncoding,
-            String javaVersion) {
+            File baseDir) {
 
         public CompileInfo(Collection<GeneratedFile> generatedSources, Collection<GeneratedFile> resources, GenerateModelHelper.GenerateModelInfo generateModelInfo) {
             this(generatedSources,
                     resources,
                     generateModelInfo.projectClassLoader(),
                     generateModelInfo.runtimeClassPathElements(),
-                    generateModelInfo.baseDir(),
-                    generateModelInfo.javaSourceEncoding(),
-                    generateModelInfo.javaVersion());
+                    generateModelInfo.baseDir());
         }
     }
 
@@ -78,14 +75,16 @@ public class CompilerHelper {
 
     public static void compileAndDumpGeneratedSources(CompileInfo compileInfo) {
         // Compile and write files
-        compileAndWriteClasses(compileInfo.generatedSources(),
-                compileInfo.projectClassLoader,
-                buildJavaCompilerSettings(compileInfo.runtimeClassPathElements,
-                        compileInfo.javaSourceEncoding,
-                        compileInfo.javaVersion),
-                getGeneratedFileWriter(compileInfo.baseDir));
-        // Dump resources
-        writeFiles(compileInfo.generatedSources, compileInfo.baseDir);
+        /*
+         * compileAndWriteClasses(compileInfo.generatedSources(),
+         * compileInfo.projectClassLoader,
+         * buildJavaCompilerSettings(compileInfo.runtimeClassPathElements,
+         * compileInfo.javaSourceEncoding,
+         * compileInfo.javaVersion),
+         * getGeneratedFileWriter(compileInfo.baseDir));
+         * // Dump resources
+         * writeFiles(compileInfo.generatedSources, compileInfo.baseDir);
+         */
     }
 
     public static void dumpResources(Collection<GeneratedFile> resources, Path baseDir) {
