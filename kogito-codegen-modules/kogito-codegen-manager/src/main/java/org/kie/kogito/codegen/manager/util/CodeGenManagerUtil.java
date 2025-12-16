@@ -24,6 +24,7 @@ import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -45,6 +46,7 @@ import org.kie.kogito.codegen.process.ProcessCodegen;
 import org.kie.kogito.codegen.process.persistence.PersistenceGenerator;
 import org.reflections.Reflections;
 import org.reflections.util.ConfigurationBuilder;
+import org.reflections.vfs.Vfs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -179,10 +181,27 @@ public class CodeGenManagerUtil {
 
     public static Reflections getReflections(ClassLoader projectClassLoader) {
         URLClassLoader urlClassLoader = (URLClassLoader) projectClassLoader;
+        URL[] classloaderUrls = urlClassLoader.getURLs();
+        URL[] filteredUrls = getFilteredURLs(classloaderUrls);
         ConfigurationBuilder builder = new ConfigurationBuilder();
-        builder.addUrls(urlClassLoader.getURLs());
+        builder.addUrls(filteredUrls);
         builder.addClassLoaders(urlClassLoader);
         return new Reflections(builder);
+    }
+
+    static URL[] getFilteredURLs(URL[] toFilter) {
+        return Arrays.stream(toFilter)
+                .filter(CodeGenManagerUtil::matchFilters).distinct().toArray(URL[]::new);
+    }
+
+    static boolean matchFilters(URL toMatch) {
+        return Arrays.stream(Vfs.DefaultUrlTypes.values()).anyMatch(defaultUrlTypes -> {
+            try {
+                return defaultUrlTypes.matches(toMatch);
+            } catch (Exception e) {
+                return false;
+            }
+        });
     }
 
     static Predicate<Class<?>> classSubTypeAvailabilityResolver(ClassLoader projectClassLoader) {
