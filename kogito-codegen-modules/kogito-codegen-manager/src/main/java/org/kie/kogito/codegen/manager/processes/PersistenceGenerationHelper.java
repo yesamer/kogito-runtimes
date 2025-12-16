@@ -40,8 +40,8 @@ import org.reflections.Reflections;
 
 import static java.util.Arrays.asList;
 import static org.kie.kogito.codegen.core.utils.GeneratedFileValidation.validateGeneratedFileTypes;
-import static org.kie.kogito.codegen.manager.CompilerHelper.RESOURCES;
-import static org.kie.kogito.codegen.manager.CompilerHelper.SOURCES;
+import static org.kie.kogito.codegen.manager.GenerateModelHelper.RESOURCES;
+import static org.kie.kogito.codegen.manager.GenerateModelHelper.SOURCES;
 
 public class PersistenceGenerationHelper {
 
