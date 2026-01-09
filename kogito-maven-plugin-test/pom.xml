@@ -151,6 +151,7 @@
           <execution>
             <goals>
               <goal>generateModel</goal>
+              <goal>generateResources</goal>
             </goals>
           </execution>
         </executions>

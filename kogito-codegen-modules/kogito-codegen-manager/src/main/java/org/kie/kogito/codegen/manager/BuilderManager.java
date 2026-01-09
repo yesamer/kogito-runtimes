@@ -36,6 +36,15 @@ public class BuilderManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BuilderManager.class);
 
+    public static void processResources(BuildInfo buildInfo) throws MalformedURLException {
+        ClassLoader projectClassLoader = CodeGenManagerUtil.projectClassLoader(buildInfo.projectFilesUris());
+        KogitoGAV kogitoGAV = new KogitoGAV(buildInfo.projectGroupId(), buildInfo.projectArtifactId(), buildInfo.projectVersion());
+        KogitoBuildContext kogitoBuildContext = getKogitoBuildContext(projectClassLoader, kogitoGAV, buildInfo);
+        GenerateModelHelper.GenerateModelInfo generateModelInfo = new GenerateModelHelper.GenerateModelInfo(projectClassLoader,
+                kogitoBuildContext, buildInfo);
+        GenerateModelHelper.generateResources(generateModelInfo);
+    }
+
     public interface KogitoBuildContextInfo {
         Path projectBasePath();
 

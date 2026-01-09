@@ -46,6 +46,17 @@ public class GenerateModelHelper {
     private GenerateModelHelper() {
     }
 
+    public static void generateResources(GenerateModelInfo generateModelInfo) {
+        Map<String, Collection<GeneratedFile>> generatedPersistenceFiles =
+                PersistenceGenerationHelper.generatePersistenceFiles(
+                        generateModelInfo.kogitoBuildContext, generateModelInfo.projectClassLoader,
+                        generateModelInfo.schemaVersion);
+
+        GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(SOURCES), generateModelInfo.baseDir().toPath());
+        GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(RESOURCES), generateModelInfo.baseDir().toPath());
+
+    }
+
     public record GenerateModelInfo(
             ClassLoader projectClassLoader,
             KogitoBuildContext kogitoBuildContext,
@@ -100,13 +111,15 @@ public class GenerateModelHelper {
         GeneratedFileManager.dumpGeneratedFiles(generatedModelFiles.get(SOURCES), generateModelInfo.baseDir().toPath());
         GeneratedFileManager.dumpGeneratedFiles(generatedModelFiles.get(RESOURCES), generateModelInfo.baseDir().toPath());
 
-        Map<String, Collection<GeneratedFile>> generatedPersistenceFiles =
-                PersistenceGenerationHelper.generatePersistenceFiles(
-                        generateModelInfo.kogitoBuildContext, generateModelInfo.projectClassLoader,
-                        generateModelInfo.schemaVersion);
-
-        GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(SOURCES), generateModelInfo.baseDir().toPath());
-        GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(RESOURCES), generateModelInfo.baseDir().toPath());
+        /*
+         * Map<String, Collection<GeneratedFile>> generatedPersistenceFiles =
+         * PersistenceGenerationHelper.generatePersistenceFiles(
+         * generateModelInfo.kogitoBuildContext, generateModelInfo.projectClassLoader,
+         * generateModelInfo.schemaVersion);
+         * 
+         * GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(SOURCES), generateModelInfo.baseDir().toPath());
+         * GeneratedFileManager.dumpGeneratedFiles(generatedPersistenceFiles.get(RESOURCES), generateModelInfo.baseDir().toPath());
+         */
 
         if (!generateModelInfo.keepSources()) {
             GeneratedFileManager.deleteFilesByExtension(generateModelInfo.outputDirectory().toPath(), "drl");

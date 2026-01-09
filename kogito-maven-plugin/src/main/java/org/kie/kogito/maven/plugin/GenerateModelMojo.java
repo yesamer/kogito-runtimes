@@ -27,7 +27,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 
 @Mojo(name = "generateModel",
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-        defaultPhase = LifecyclePhase.PROCESS_CLASSES,
+        defaultPhase = LifecyclePhase.PROCESS_RESOURCES,
         threadSafe = true)
 public class GenerateModelMojo extends AbstractKieMojo {
 

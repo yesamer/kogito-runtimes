@@ -83,17 +83,31 @@ public abstract class AbstractKieMojo extends AbstractMojo {
     protected MavenProject project;
 
     @Component
-    private BuildPluginManager pluginManager;
+    protected BuildPluginManager pluginManager;
 
     @Component
-    private MavenProject mavenProject;
+    protected MavenProject mavenProject;
 
     @Component
-    private MavenSession mavenSession;
+    protected MavenSession mavenSession;
 
     public void buildProject() throws MojoExecutionException {
         getLog().info("buildProject");
         executionLog();
+
+        /* TO compile the Static classes first. */
+        executeMojo(
+                plugin(
+                        groupId("org.apache.maven.plugins"),
+                        artifactId("maven-compiler-plugin"),
+                        version("3.13.0")),
+                goal("compile"),
+                configuration(),
+                executionEnvironment(
+                        mavenProject,
+                        mavenSession,
+                        pluginManager));
+
         try {
             Set<URI> projectFilesUris = MojoUtil.getProjectFiles(mavenProject, null);
             BuilderManager.BuildInfo buildInfo = new BuilderManager.BuildInfo(
@@ -115,18 +129,6 @@ public abstract class AbstractKieMojo extends AbstractMojo {
             BuilderManager.build(buildInfo);
 
             mavenProject.addCompileSourceRoot(project.getBasedir().getAbsolutePath() + "/target/generated-sources/kogito");
-
-            executeMojo(
-                    plugin(
-                            groupId("org.apache.maven.plugins"),
-                            artifactId("maven-compiler-plugin"),
-                            version("3.13.0")),
-                    goal("compile"),
-                    configuration(),
-                    executionEnvironment(
-                            mavenProject,
-                            mavenSession,
-                            pluginManager));
 
         } catch (DependencyResolutionRequiredException | IOException e) {
             throw new MojoExecutionException("Error building project", e);
