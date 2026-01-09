@@ -55,20 +55,20 @@ public class GeneratedFileManager {
      * Dumps a collection of generated files to the specified base path using a configured {@code GeneratedFileWriter}.
      * If the provided collection of generated files is null or empty, no action is taken.
      *
-     * @param resources the collection of {@code GeneratedFile} objects to be written; may be null or empty.
+     * @param generatedFiles the collection of {@code GeneratedFile} objects to be written; may be null or empty.
      * @param basePath the base directory {@code Path} where the files will be written; must not be null.
      * @throws NullPointerException if {@code basePath} is null.
      */
-    public static void dumpGeneratedFiles(Collection<GeneratedFile> resources, Path basePath) {
+    public static void dumpGeneratedFiles(Collection<GeneratedFile> generatedFiles, Path basePath) {
         Objects.requireNonNull(basePath, "basePath must not be null");
 
-        if (resources == null || resources.isEmpty()) {
+        if (generatedFiles == null || generatedFiles.isEmpty()) {
             LOGGER.debug("No generated files to write (0 items).");
             return;
         }
 
         GeneratedFileWriter writer = GENERATED_FILE_WRITER_BUILDER.build(basePath);
-        resources.forEach(generatedFile -> writeGeneratedFile(generatedFile, writer));
+        generatedFiles.forEach(generatedFile -> writeGeneratedFile(generatedFile, writer));
     }
 
     /**
