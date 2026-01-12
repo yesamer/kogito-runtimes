@@ -32,9 +32,16 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.kie.kogito.codegen.manager.BuilderManager;
 import org.kie.kogito.maven.plugin.util.MojoUtil;
 
+import static org.twdata.maven.mojoexecutor.MojoExecutor.*;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.artifactId;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.configuration;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.executionEnvironment;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.goal;
+import static org.twdata.maven.mojoexecutor.MojoExecutor.version;
+
 @Mojo(name = "generateResources",
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-        defaultPhase = LifecyclePhase.COMPILE,
+        defaultPhase = LifecyclePhase.PROCESS_CLASSES,
         threadSafe = true)
 public class GenerateResourcesMojo extends AbstractKieMojo {
 
@@ -61,7 +68,20 @@ public class GenerateResourcesMojo extends AbstractKieMojo {
 
             BuilderManager.processResources(buildInfo);
 
-            //mavenProject.addCompileSourceRoot(project.getBasedir().getAbsolutePath() + "/target/generated-sources/kogito");
+            mavenProject.addCompileSourceRoot(project.getBasedir().getAbsolutePath() + "/target/generated-sources/kogito");
+
+            /* TO compile the Static classes first. */
+            executeMojo(
+                    plugin(
+                            groupId("org.apache.maven.plugins"),
+                            artifactId("maven-compiler-plugin"),
+                            version("3.13.0")),
+                    goal("compile"),
+                    configuration(),
+                    executionEnvironment(
+                            mavenProject,
+                            mavenSession,
+                            pluginManager));
 
         } catch (DependencyResolutionRequiredException | IOException e) {
             throw new MojoExecutionException("Error building project", e);
