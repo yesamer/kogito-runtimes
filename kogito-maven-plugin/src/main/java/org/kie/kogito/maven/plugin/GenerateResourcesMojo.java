@@ -34,7 +34,7 @@ import org.kie.kogito.maven.plugin.util.MojoUtil;
 
 @Mojo(name = "generateResources",
         requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME,
-        defaultPhase = LifecyclePhase.PROCESS_CLASSES,
+        defaultPhase = LifecyclePhase.COMPILE,
         threadSafe = true)
 public class GenerateResourcesMojo extends AbstractKieMojo {
 
